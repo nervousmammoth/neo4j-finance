@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { parseCSV, ParseResult } from '@/lib/csv-parser'
 
 describe('CSV Parser', () => {
@@ -244,6 +244,67 @@ describe('CSV Parser', () => {
       expect(result.meta.rowCount).toBe(1000)
       expect(result.data[0]).toEqual({ name: 'Person0', age: '20', city: 'City0' })
       expect(result.data[999]).toEqual({ name: 'Person999', age: '1019', city: 'City999' })
+    })
+  })
+
+  describe('Critical Error Handling', () => {
+    it('should handle CSV with unclosed quotes gracefully (papaparse is lenient)', async () => {
+      // CSV with unclosed quote - papaparse handles this gracefully
+      const csv = 'name,age\n"John,30'
+      const result = await parseCSV(csv)
+
+      // papaparse is lenient and will parse this successfully
+      expect(result.success).toBe(true)
+      expect(result.data.length).toBeGreaterThanOrEqual(0)
+    })
+
+    it('should handle CSV with quote errors gracefully', async () => {
+      // CSV with quotes that might cause parsing issues
+      const csv = 'name,age\nJohn,30\n"Jane",25'
+      const result = await parseCSV(csv)
+
+      // Should succeed - papaparse handles quotes well
+      expect(result.success).toBe(true)
+      expect(result.data.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('should handle extremely malformed input', async () => {
+      // Very short malformed input
+      const csv = '"'
+      const result = await parseCSV(csv)
+
+      // Even this gets parsed (might be empty but shouldn't crash)
+      expect(result).toHaveProperty('success')
+      expect(result).toHaveProperty('data')
+      expect(result).toHaveProperty('errors')
+      expect(result).toHaveProperty('meta')
+    })
+
+    it('should handle Papa.parse error callback', async () => {
+      // Mock papaparse to trigger error callback
+      const Papa = await import('papaparse')
+      const originalParse = Papa.default.parse
+
+      // Temporarily replace parse with a version that triggers the error callback
+      vi.spyOn(Papa.default, 'parse').mockImplementationOnce((input: any, config: any) => {
+        // Simulate a catastrophic error by calling the error callback
+        if (config.error) {
+          config.error(new Error('Simulated Papa.parse error'), input)
+        }
+      })
+
+      const csv = 'name,age\nJohn,30'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(false)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].type).toBe('Error')
+      expect(result.errors[0].code).toBe('PARSE_ERROR')
+      expect(result.errors[0].message).toContain('Simulated')
+      expect(result.data).toHaveLength(0)
+
+      // Restore original implementation
+      vi.restoreAllMocks()
     })
   })
 })
