@@ -1,4 +1,5 @@
 import Papa from 'papaparse'
+import { buildErrorResponse, buildSuccessResponse, inferColumnTypes } from './parser-utils'
 
 export interface ParseResult<T = Record<string, string>> {
   success: boolean
@@ -37,120 +38,6 @@ export interface ParseOptions {
  */
 function isCriticalError(error: Papa.ParseError, dataLength: number): boolean {
   return error.type === 'Quotes' || (error.type === 'Delimiter' && dataLength === 0)
-}
-
-/**
- * Builds an error response for parsing failures
- */
-function buildErrorResponse<T>(
-  errors: ParseError[],
-  meta: Partial<ParseResult<T>['meta']> = {}
-): ParseResult<T> {
-  return {
-    success: false,
-    data: [],
-    errors,
-    meta: {
-      delimiter: meta.delimiter || '',
-      linebreak: meta.linebreak || '',
-      headers: meta.headers || [],
-      rowCount: meta.rowCount || 0,
-    },
-  }
-}
-
-/**
- * Builds a success response with parsed data
- */
-function buildSuccessResponse<T>(
-  data: T[],
-  errors: ParseError[],
-  meta: ParseResult<T>['meta']
-): ParseResult<T> {
-  return {
-    success: true,
-    data,
-    errors,
-    meta,
-  }
-}
-
-/**
- * Infers and converts column values to appropriate types
- * Detects: numbers, booleans, dates, null values
- * Returns data with mixed types (string | number | boolean | Date)
- */
-function inferColumnTypes(
-  data: Record<string, string>[]
-): Record<string, string | number | boolean | Date>[] {
-  if (data.length === 0) return []
-
-  // For each column, check if all values can be converted to a specific type
-  const firstRow = data[0]
-  if (typeof firstRow !== 'object' || firstRow === null || Array.isArray(firstRow)) return data
-
-  const columns = Object.keys(firstRow)
-  const columnTypes: Record<string, 'number' | 'boolean' | 'date' | 'string'> = {}
-
-  // Determine type for each column
-  columns.forEach((col) => {
-    let isNumber = true
-    let isBoolean = true
-    let isDate = true
-
-    for (const row of data) {
-      const value = row[col]
-      if (value === '' || value === null || value === undefined) continue
-
-      // Check number
-      if (isNumber && (isNaN(Number(value)) || value.trim() === '')) {
-        isNumber = false
-      }
-
-      // Check boolean
-      if (isBoolean && !['true', 'false', '0', '1', 'yes', 'no'].includes(value.toLowerCase())) {
-        isBoolean = false
-      }
-
-      // Check date - exclude plain numeric strings to avoid false positives
-      // e.g., '123' should be a number, not a date
-      if (isDate && (isNaN(Date.parse(value)) || /^\d+$/.test(value.trim()))) {
-        isDate = false
-      }
-
-      // Early exit if none match
-      if (!isNumber && !isBoolean && !isDate) break
-    }
-
-    // Prioritize: boolean > number > date > string
-    if (isBoolean) columnTypes[col] = 'boolean'
-    else if (isNumber) columnTypes[col] = 'number'
-    else if (isDate) columnTypes[col] = 'date'
-    else columnTypes[col] = 'string'
-  })
-
-  // Convert values based on inferred types
-  return data.map((row) => {
-    const converted: Record<string, string | number | boolean | Date> = { ...row }
-    columns.forEach((col) => {
-      const value = row[col]
-      if (value === '' || value === null || value === undefined) return
-
-      switch (columnTypes[col]) {
-        case 'number':
-          converted[col] = Number(value)
-          break
-        case 'boolean':
-          converted[col] = ['true', '1', 'yes'].includes(value.toLowerCase())
-          break
-        case 'date':
-          converted[col] = new Date(value)
-          break
-        // string: no conversion needed
-      }
-    })
-    return converted
-  })
 }
 
 /**
