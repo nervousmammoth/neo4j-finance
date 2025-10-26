@@ -421,6 +421,40 @@ describe('XLSX Parser', () => {
       expect(result.errors[0].code).toBe('PARSE_ERROR')
       expect(result.errors[0].message).toContain('Failed to read file')
     })
+
+    it('should handle non-ArrayBuffer result from FileReader', async () => {
+      // Create a File object
+      const buffer = createXLSXBuffer([['name', 'age'], ['John', 30]])
+      const file = new File([new Uint8Array(buffer)], 'test.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+
+      // Mock FileReader to return non-ArrayBuffer result
+      const originalFileReader = global.FileReader
+      global.FileReader = class extends originalFileReader {
+        readAsArrayBuffer() {
+          // Trigger load event with non-ArrayBuffer result
+          setTimeout(() => {
+            if (this.onload) {
+              // Simulate result being something other than ArrayBuffer
+              const fakeEvent = {
+                target: { result: 'not an ArrayBuffer' },
+              } as ProgressEvent<FileReader>
+              this.onload(fakeEvent)
+            }
+          }, 0)
+        }
+      } as typeof FileReader
+
+      const result = await parseXLSX(file)
+
+      // Restore FileReader
+      global.FileReader = originalFileReader
+
+      expect(result.success).toBe(false)
+      expect(result.errors[0].code).toBe('PARSE_ERROR')
+      expect(result.errors[0].message).toContain('result is not an ArrayBuffer')
+    })
   })
 
   describe('Feature Parity with CSV Parser', () => {
