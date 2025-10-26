@@ -1,14 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { getDriver, healthCheck, executeQuery, closeDriver } from '@/lib/neo4j'
+import {
+  getDriver,
+  healthCheck,
+  executeQuery,
+  executeReadTransaction,
+  executeWriteTransaction,
+  closeDriver,
+} from '@/lib/neo4j'
 
 // Create mock functions for session
 const mockRun = vi.fn()
 const mockClose = vi.fn()
+const mockExecuteRead = vi.fn()
+const mockExecuteWrite = vi.fn()
 
 // Create mock session
 const mockSession = {
   run: mockRun,
   close: mockClose,
+  executeRead: mockExecuteRead,
+  executeWrite: mockExecuteWrite,
 }
 
 // Create mock driver
@@ -56,6 +67,8 @@ describe('Neo4j Connection Manager', () => {
     })
     mockClose.mockResolvedValue(undefined)
     mockDriverClose.mockResolvedValue(undefined)
+    mockExecuteRead.mockImplementation(async (fn) => await fn({}))
+    mockExecuteWrite.mockImplementation(async (fn) => await fn({}))
   })
 
   afterEach(async () => {
@@ -131,6 +144,60 @@ describe('Neo4j Connection Manager', () => {
       mockRun.mockRejectedValueOnce(new Error('Invalid query syntax'))
 
       await expect(executeQuery('INVALID QUERY')).rejects.toThrow('Invalid query syntax')
+    })
+  })
+
+  describe('executeReadTransaction', () => {
+    it('should execute read transaction successfully', async () => {
+      const transactionWork = vi.fn(async () => ({ result: 'success' }))
+      const result = await executeReadTransaction(transactionWork)
+
+      expect(result).toEqual({ result: 'success' })
+      expect(mockExecuteRead).toHaveBeenCalledTimes(1)
+      expect(mockClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('should use default database when NEO4J_DATABASE is not set', async () => {
+      delete process.env.NEO4J_DATABASE
+      const transactionWork = vi.fn(async () => ({ result: 'success' }))
+      await executeReadTransaction(transactionWork)
+
+      expect(mockDriverSession).toHaveBeenCalledWith({ database: 'neo4j' })
+    })
+
+    it('should handle transaction errors', async () => {
+      mockExecuteRead.mockRejectedValueOnce(new Error('Transaction failed'))
+      const transactionWork = vi.fn()
+
+      await expect(executeReadTransaction(transactionWork)).rejects.toThrow('Transaction failed')
+      expect(mockClose).toHaveBeenCalledTimes(1) // Session should still be closed
+    })
+  })
+
+  describe('executeWriteTransaction', () => {
+    it('should execute write transaction successfully', async () => {
+      const transactionWork = vi.fn(async () => ({ result: 'written' }))
+      const result = await executeWriteTransaction(transactionWork)
+
+      expect(result).toEqual({ result: 'written' })
+      expect(mockExecuteWrite).toHaveBeenCalledTimes(1)
+      expect(mockClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('should use default database when NEO4J_DATABASE is not set', async () => {
+      delete process.env.NEO4J_DATABASE
+      const transactionWork = vi.fn(async () => ({ result: 'written' }))
+      await executeWriteTransaction(transactionWork)
+
+      expect(mockDriverSession).toHaveBeenCalledWith({ database: 'neo4j' })
+    })
+
+    it('should handle transaction errors', async () => {
+      mockExecuteWrite.mockRejectedValueOnce(new Error('Write failed'))
+      const transactionWork = vi.fn()
+
+      await expect(executeWriteTransaction(transactionWork)).rejects.toThrow('Write failed')
+      expect(mockClose).toHaveBeenCalledTimes(1) // Session should still be closed
     })
   })
 
