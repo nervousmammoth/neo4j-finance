@@ -307,4 +307,95 @@ describe('CSV Parser', () => {
       vi.restoreAllMocks()
     })
   })
+
+  describe('Type Inference', () => {
+    it('should infer and convert numeric columns', async () => {
+      const csv = 'name,age,price\nJohn,30,19.99\nJane,25,29.50'
+      const result = await parseCSV(csv, { inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(typeof result.data[0].age).toBe('number')
+      expect(typeof result.data[0].price).toBe('number')
+      expect(result.data[0].age).toBe(30)
+      expect(result.data[0].price).toBe(19.99)
+    })
+
+    it('should infer and convert boolean columns', async () => {
+      const csv = 'name,active,verified\nJohn,true,1\nJane,false,0'
+      const result = await parseCSV(csv, { inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(typeof result.data[0].active).toBe('boolean')
+      expect(typeof result.data[0].verified).toBe('boolean')
+      expect(result.data[0].active).toBe(true)
+      expect(result.data[0].verified).toBe(true)
+      expect(result.data[1].active).toBe(false)
+      expect(result.data[1].verified).toBe(false)
+    })
+
+    it('should infer and convert date columns', async () => {
+      const csv = 'name,birthdate\nJohn,1990-05-15\nJane,1985-08-22'
+      const result = await parseCSV(csv, { inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(result.data[0].birthdate).toBeInstanceOf(Date)
+      expect(result.data[1].birthdate).toBeInstanceOf(Date)
+    })
+
+    it('should keep string columns as strings', async () => {
+      const csv = 'name,city\nJohn,NYC\nJane,LA'
+      const result = await parseCSV(csv, { inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(typeof result.data[0].name).toBe('string')
+      expect(typeof result.data[0].city).toBe('string')
+    })
+
+    it('should handle mixed type columns (fall back to string)', async () => {
+      const csv = 'name,value\nJohn,123\nJane,abc'
+      const result = await parseCSV(csv, { inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      // Mixed types should stay as strings
+      expect(typeof result.data[0].value).toBe('string')
+      expect(typeof result.data[1].value).toBe('string')
+    })
+
+    it('should not infer types when inferTypes is false', async () => {
+      const csv = 'name,age\nJohn,30\nJane,25'
+      const result = await parseCSV(csv, { inferTypes: false })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      // Should remain strings when inferTypes is false
+      expect(typeof result.data[0].age).toBe('string')
+      expect(result.data[0].age).toBe('30')
+    })
+
+    it('should handle empty values during type inference', async () => {
+      const csv = 'name,age,active\nJohn,30,true\nJane,,false'
+      const result = await parseCSV(csv, { inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(typeof result.data[0].age).toBe('number')
+      // Empty values should be preserved
+      expect(result.data[1].age).toBe('')
+    })
+
+    it('should handle CSV without headers during type inference', async () => {
+      const csv = 'John,30\nJane,25'
+      const result = await parseCSV(csv, { header: false, inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      // Arrays shouldn't be affected by type inference
+      expect(result.data[0]).toBeInstanceOf(Array)
+    })
+  })
 })
