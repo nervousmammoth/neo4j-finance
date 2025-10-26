@@ -28,6 +28,7 @@ export function getDriver(): Driver {
       maxConnectionLifetime: 30 * 60 * 1000, // 30 minutes
       maxConnectionPoolSize: 50,
       connectionAcquisitionTimeout: 60000, // 60 seconds
+      maxTransactionRetryTime: 30000, // 30 seconds - automatic retry for transient errors
     }
   )
 
@@ -63,6 +64,44 @@ export async function executeQuery<T = unknown>(
   try {
     const result = await session.run(query, params)
     return result.records.map(record => record.toObject() as T)
+  } finally {
+    await session.close()
+  }
+}
+
+/**
+ * Execute a read transaction with automatic retry logic
+ * Recommended for read operations in production
+ */
+export async function executeReadTransaction<T = unknown>(
+  transactionWork: (tx: unknown) => Promise<T>
+): Promise<T> {
+  const driver = getDriver()
+  const session = driver.session({
+    database: process.env.NEO4J_DATABASE || 'neo4j',
+  })
+
+  try {
+    return await session.executeRead(transactionWork)
+  } finally {
+    await session.close()
+  }
+}
+
+/**
+ * Execute a write transaction with automatic retry logic
+ * Recommended for write operations in production
+ */
+export async function executeWriteTransaction<T = unknown>(
+  transactionWork: (tx: unknown) => Promise<T>
+): Promise<T> {
+  const driver = getDriver()
+  const session = driver.session({
+    database: process.env.NEO4J_DATABASE || 'neo4j',
+  })
+
+  try {
+    return await session.executeWrite(transactionWork)
   } finally {
     await session.close()
   }
