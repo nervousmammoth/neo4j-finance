@@ -17,15 +17,19 @@ export default defineConfig({
         'node_modules/',
         '__tests__/',
         '*.config.*',
+        '**/*.d.ts',
         '.next/',
         'coverage/',
         'issues/',
+        'app/**', // Exclude app skeleton for Issue 001
+        'lib/utils.ts', // Exclude utils boilerplate for Issue 001
+        'components/ui/**', // Exclude shadcn components
       ],
       thresholds: {
-        branches: 80,
-        functions: 90,
-        lines: 90,
-        statements: 90,
+        branches: 100,
+        functions: 100,
+        lines: 100,
+        statements: 100,
       },
     },
   },
