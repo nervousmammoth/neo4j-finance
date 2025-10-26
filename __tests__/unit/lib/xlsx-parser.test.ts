@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { parseXLSX } from '@/lib/xlsx-parser'
 import * as XLSX from 'xlsx'
 
@@ -190,6 +190,31 @@ describe('XLSX Parser', () => {
       expect(result.errors[0].message).toContain('empty')
     })
 
+    it('should handle XLSX with only headers (no data rows)', async () => {
+      const buffer = createXLSXBuffer([['name', 'age', 'city']])
+
+      const result = await parseXLSX(buffer)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(0)
+      expect(result.meta.headers).toEqual(['name', 'age', 'city'])
+      expect(result.meta.rowCount).toBe(0)
+      expect(result.errors).toHaveLength(0)
+    })
+
+    it('should handle XLSX with only headers and transformHeader option', async () => {
+      const buffer = createXLSXBuffer([['Name', 'Age', 'City']])
+
+      const result = await parseXLSX(buffer, {
+        transformHeader: (h) => h.toLowerCase(),
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(0)
+      expect(result.meta.headers).toEqual(['name', 'age', 'city'])
+      expect(result.meta.rowCount).toBe(0)
+    })
+
     it('should extract computed values from XLSX with formulas', async () => {
       const buffer = createXLSXWithFormulas()
 
@@ -365,6 +390,37 @@ describe('XLSX Parser', () => {
       expect(result.data).toHaveLength(1)
       expect(result.data[0]).toEqual({ name: 'John', age: 30 })
     })
+
+    it('should handle FileReader error when reading File object', async () => {
+      // Create a File object
+      const buffer = createXLSXBuffer([['name', 'age'], ['John', 30]])
+      const file = new File([new Uint8Array(buffer)], 'test.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+
+      // Mock FileReader to trigger error
+      const originalFileReader = global.FileReader
+      global.FileReader = class extends originalFileReader {
+        readAsArrayBuffer() {
+          // Trigger error event immediately
+          setTimeout(() => {
+            if (this.onerror) {
+              // Create error event with proper type
+              this.onerror(new ProgressEvent('error') as any)
+            }
+          }, 0)
+        }
+      } as typeof FileReader
+
+      const result = await parseXLSX(file)
+
+      // Restore FileReader
+      global.FileReader = originalFileReader
+
+      expect(result.success).toBe(false)
+      expect(result.errors[0].code).toBe('PARSE_ERROR')
+      expect(result.errors[0].message).toContain('Failed to read file')
+    })
   })
 
   describe('Feature Parity with CSV Parser', () => {
@@ -441,6 +497,57 @@ describe('XLSX Parser', () => {
       expect(Array.isArray(result.data)).toBe(true)
       expect(Array.isArray(result.errors)).toBe(true)
     })
+
+    it('should support header: false option for array-based parsing', async () => {
+      const buffer = createXLSXBuffer([
+        ['name', 'age', 'city'],
+        ['John', 30, 'NYC'],
+        ['Jane', 25, 'LA'],
+      ])
+
+      const result = await parseXLSX(buffer, { header: false })
+
+      expect(result.success).toBe(true)
+      // With header: false, data should include all rows including headers
+      expect(result.data.length).toBeGreaterThan(0)
+    })
+
+    it('should handle empty cells in header row', async () => {
+      // Create XLSX with some empty cells in headers
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.aoa_to_sheet([
+        ['name', '', 'city'], // Empty header in middle
+        ['John', 30, 'NYC'],
+      ])
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
+
+      const result = await parseXLSX(buffer)
+
+      expect(result.success).toBe(true)
+      expect(result.meta.headers).toContain('')
+      expect(result.data).toHaveLength(1)
+    })
+
+    it('should handle XLSX with undefined/missing cells in headers-only file', async () => {
+      // Create an XLSX with only one row (headers) that has some undefined cells
+      const wb = XLSX.utils.book_new()
+      const ws: XLSX.WorkSheet = {
+        '!ref': 'A1:C1', // Define range with 3 columns
+        A1: { v: 'name', t: 's' }, // First header exists
+        // B1 is missing (undefined cell)
+        C1: { v: 'city', t: 's' }, // Third header exists
+      }
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer
+
+      const result = await parseXLSX(buffer)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(0) // Only headers, no data
+      expect(result.meta.headers).toHaveLength(3)
+      expect(result.meta.headers).toContain('') // B1 missing cell becomes empty string
+    })
   })
 
   describe('Additional Edge Cases for Coverage', () => {
@@ -498,5 +605,6 @@ describe('XLSX Parser', () => {
       expect(result).toHaveProperty('success')
       expect(result).toHaveProperty('errors')
     })
+
   })
 })
