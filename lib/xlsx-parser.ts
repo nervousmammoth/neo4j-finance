@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { buildErrorResponse, buildSuccessResponse, inferColumnTypes } from './parser-utils'
 
 // Re-export shared types from CSV parser for consistency
 export type { ParseResult, ParseError, ParseOptions } from './csv-parser'
@@ -7,121 +8,6 @@ export type { ParseResult, ParseError, ParseOptions } from './csv-parser'
 const ZIP_MAGIC_BYTE_1 = 0x50 // 'P' - ZIP files start with "PK"
 const ZIP_MAGIC_BYTE_2 = 0x4b // 'K'
 const MIN_ZIP_HEADER_SIZE = 4
-
-/**
- * Builds an error response for parsing failures
- */
-function buildErrorResponse<T>(
-  errors: import('./csv-parser').ParseError[],
-  meta: Partial<import('./csv-parser').ParseResult<T>['meta']> = {}
-): import('./csv-parser').ParseResult<T> {
-  return {
-    success: false,
-    data: [],
-    errors,
-    meta: {
-      delimiter: 'N/A',
-      linebreak: 'N/A',
-      headers: meta.headers || [],
-      rowCount: meta.rowCount || 0,
-    },
-  }
-}
-
-/**
- * Builds a success response with parsed data
- */
-function buildSuccessResponse<T>(
-  data: T[],
-  errors: import('./csv-parser').ParseError[],
-  meta: import('./csv-parser').ParseResult<T>['meta']
-): import('./csv-parser').ParseResult<T> {
-  return {
-    success: true,
-    data,
-    errors,
-    meta,
-  }
-}
-
-/**
- * Infers and converts column values to appropriate types
- * (Reused from CSV parser logic - ideally would be shared utility)
- */
-function inferColumnTypes(
-  data: Record<string, string | number>[]
-): Record<string, string | number | boolean | Date>[] {
-  if (data.length === 0) return []
-
-  const firstRow = data[0]
-  if (typeof firstRow !== 'object' || firstRow === null || Array.isArray(firstRow)) return data
-
-  const columns = Object.keys(firstRow)
-  const columnTypes: Record<string, 'number' | 'boolean' | 'date' | 'string'> = {}
-
-  // Determine type for each column
-  columns.forEach((col) => {
-    let isNumber = true
-    let isBoolean = true
-    let isDate = true
-
-    for (const row of data) {
-      const value = row[col]
-      // Handle already-numeric values from XLSX
-      if (value === '' || value === null || value === undefined) continue
-
-      const valueStr = String(value)
-
-      // Check number
-      if (isNumber && (isNaN(Number(valueStr)) || valueStr.trim() === '')) {
-        isNumber = false
-      }
-
-      // Check boolean
-      if (isBoolean && !['true', 'false', '0', '1', 'yes', 'no'].includes(valueStr.toLowerCase())) {
-        isBoolean = false
-      }
-
-      // Check date - exclude plain numeric strings
-      if (isDate && (isNaN(Date.parse(valueStr)) || /^\d+$/.test(valueStr.trim()))) {
-        isDate = false
-      }
-
-      if (!isNumber && !isBoolean && !isDate) break
-    }
-
-    // Prioritize: boolean > number > date > string
-    if (isBoolean) columnTypes[col] = 'boolean'
-    else if (isNumber) columnTypes[col] = 'number'
-    else if (isDate) columnTypes[col] = 'date'
-    else columnTypes[col] = 'string'
-  })
-
-  // Convert values based on inferred types
-  return data.map((row) => {
-    const converted: Record<string, string | number | boolean | Date> = { ...row }
-    columns.forEach((col) => {
-      const value = row[col]
-      if (value === '' || value === null || value === undefined) return
-
-      const valueStr = String(value)
-
-      switch (columnTypes[col]) {
-        case 'number':
-          converted[col] = Number(valueStr)
-          break
-        case 'boolean':
-          converted[col] = ['true', '1', 'yes'].includes(valueStr.toLowerCase())
-          break
-        case 'date':
-          converted[col] = new Date(valueStr)
-          break
-        // string: no conversion needed
-      }
-    })
-    return converted
-  })
-}
 
 /**
  * Reads File object as ArrayBuffer
@@ -214,13 +100,17 @@ export async function parseXLSX<T = Record<string, string | number>>(
 ): Promise<import('./csv-parser').ParseResult<T>> {
   // Validate input
   if (input === null || input === undefined) {
-    return buildErrorResponse([
-      {
-        type: 'Error',
-        code: 'INVALID_INPUT',
-        message: 'Input cannot be null or undefined',
-      },
-    ])
+    return buildErrorResponse(
+      [
+        {
+          type: 'Error',
+          code: 'INVALID_INPUT',
+          message: 'Input cannot be null or undefined',
+        },
+      ],
+      {},
+      { delimiter: 'N/A', linebreak: 'N/A' }
+    )
   }
 
   try {
@@ -235,13 +125,17 @@ export async function parseXLSX<T = Record<string, string | number>>(
     // Validate XLSX file format (XLSX files are ZIP files, start with 'PK' signature)
     const bytes = buffer instanceof Buffer ? buffer : Buffer.from(new Uint8Array(buffer))
     if (bytes.length < MIN_ZIP_HEADER_SIZE || bytes[0] !== ZIP_MAGIC_BYTE_1 || bytes[1] !== ZIP_MAGIC_BYTE_2) {
-      return buildErrorResponse([
-        {
-          type: 'Error',
-          code: 'PARSE_ERROR',
-          message: 'Invalid XLSX file format (not a valid ZIP archive)',
-        },
-      ])
+      return buildErrorResponse(
+        [
+          {
+            type: 'Error',
+            code: 'PARSE_ERROR',
+            message: 'Invalid XLSX file format (not a valid ZIP archive)',
+          },
+        ],
+        {},
+        { delimiter: 'N/A', linebreak: 'N/A' }
+      )
     }
 
     // Parse XLSX workbook (cellDates: true converts Excel date serials to JS Dates)
@@ -253,13 +147,17 @@ export async function parseXLSX<T = Record<string, string | number>>(
     // Validate workbook has sheets
     /* c8 ignore start - Defensive check; xlsx library always creates SheetNames array */
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-      return buildErrorResponse([
-        {
-          type: 'Error',
-          code: 'EMPTY_INPUT',
-          message: 'XLSX file is empty or has no sheets',
-        },
-      ])
+      return buildErrorResponse(
+        [
+          {
+            type: 'Error',
+            code: 'EMPTY_INPUT',
+            message: 'XLSX file is empty or has no sheets',
+          },
+        ],
+        {},
+        { delimiter: 'N/A', linebreak: 'N/A' }
+      )
     }
     /* c8 ignore stop */
 
@@ -285,13 +183,17 @@ export async function parseXLSX<T = Record<string, string | number>>(
 
     // Check if worksheet is empty (no cell range)
     if (!worksheet['!ref']) {
-      return buildErrorResponse([
-        {
-          type: 'Validation',
-          code: 'EMPTY_INPUT',
-          message: 'XLSX file is empty',
-        },
-      ])
+      return buildErrorResponse(
+        [
+          {
+            type: 'Validation',
+            code: 'EMPTY_INPUT',
+            message: 'XLSX file is empty',
+          },
+        ],
+        {},
+        { delimiter: 'N/A', linebreak: 'N/A' }
+      )
     }
 
     // Check if data is empty (only headers or completely empty)
@@ -310,13 +212,17 @@ export async function parseXLSX<T = Record<string, string | number>>(
 
         // If all headers are empty, it's an empty file
         if (headers.every((h) => h === '')) {
-          return buildErrorResponse([
-            {
-              type: 'Validation',
-              code: 'EMPTY_INPUT',
-              message: 'XLSX file is empty',
-            },
-          ])
+          return buildErrorResponse(
+            [
+              {
+                type: 'Validation',
+                code: 'EMPTY_INPUT',
+                message: 'XLSX file is empty',
+              },
+            ],
+            {},
+            { delimiter: 'N/A', linebreak: 'N/A' }
+          )
         }
 
         return buildSuccessResponse(
@@ -332,13 +238,17 @@ export async function parseXLSX<T = Record<string, string | number>>(
       }
 
       /* c8 ignore start - Defensive fallback; previous conditions should catch all empty cases */
-      return buildErrorResponse([
-        {
-          type: 'Validation',
-          code: 'EMPTY_INPUT',
-          message: 'XLSX file is empty',
-        },
-      ])
+      return buildErrorResponse(
+        [
+          {
+            type: 'Validation',
+            code: 'EMPTY_INPUT',
+            message: 'XLSX file is empty',
+          },
+        ],
+        {},
+        { delimiter: 'N/A', linebreak: 'N/A' }
+      )
     }
     /* c8 ignore stop */
 
@@ -387,13 +297,20 @@ export async function parseXLSX<T = Record<string, string | number>>(
       rowCount: finalData.length,
     })
   } catch (error) {
-    // Handle parsing errors
-    return buildErrorResponse([
-      {
-        type: 'Error',
-        code: 'PARSE_ERROR',
-        message: error instanceof Error ? error.message : 'Failed to parse XLSX file',
-      },
-    ])
+    // Handle parsing errors - extract message from Error or use default
+    /* c8 ignore next - Defensive: non-Error exceptions are extremely rare in practice */
+    const errorMessage = error instanceof Error ? error.message : 'Failed to parse XLSX file'
+
+    return buildErrorResponse(
+      [
+        {
+          type: 'Error',
+          code: 'PARSE_ERROR',
+          message: errorMessage,
+        },
+      ],
+      {},
+      { delimiter: 'N/A', linebreak: 'N/A' }
+    )
   }
 }
