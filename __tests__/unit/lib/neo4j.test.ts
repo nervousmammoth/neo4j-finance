@@ -114,6 +114,19 @@ describe('Neo4j Connection Manager', () => {
       expect(result).toBe(true)
     })
 
+    it('should use configured database', async () => {
+      const result = await healthCheck()
+      expect(mockDriverSession).toHaveBeenCalledWith({ database: 'neo4j' })
+      expect(result).toBe(true)
+    })
+
+    it('should use default database when NEO4J_DATABASE is not set', async () => {
+      delete process.env.NEO4J_DATABASE
+      const result = await healthCheck()
+      expect(mockDriverSession).toHaveBeenCalledWith({ database: 'neo4j' })
+      expect(result).toBe(true)
+    })
+
     it('should return false when database is unreachable', async () => {
       // Need to close driver and reset to trigger new connection
       await closeDriver()

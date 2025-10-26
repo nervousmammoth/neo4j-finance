@@ -1,4 +1,4 @@
-import neo4j, { Driver } from 'neo4j-driver'
+import neo4j, { Driver, ManagedTransaction } from 'neo4j-driver'
 
 let driver: Driver | null = null
 
@@ -38,7 +38,9 @@ export function getDriver(): Driver {
 export async function healthCheck(): Promise<boolean> {
   try {
     const driver = getDriver()
-    const session = driver.session()
+    const session = driver.session({
+      database: process.env.NEO4J_DATABASE || 'neo4j',
+    })
 
     try {
       await session.run('RETURN 1')
@@ -74,7 +76,7 @@ export async function executeQuery<T = unknown>(
  * Recommended for read operations in production
  */
 export async function executeReadTransaction<T = unknown>(
-  transactionWork: (tx: unknown) => Promise<T>
+  transactionWork: (tx: ManagedTransaction) => Promise<T>
 ): Promise<T> {
   const driver = getDriver()
   const session = driver.session({
@@ -93,7 +95,7 @@ export async function executeReadTransaction<T = unknown>(
  * Recommended for write operations in production
  */
 export async function executeWriteTransaction<T = unknown>(
-  transactionWork: (tx: unknown) => Promise<T>
+  transactionWork: (tx: ManagedTransaction) => Promise<T>
 ): Promise<T> {
   const driver = getDriver()
   const session = driver.session({
