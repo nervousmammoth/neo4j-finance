@@ -137,6 +137,16 @@ describe('Neo4j Connection Manager', () => {
       const result = await healthCheck()
       expect(result).toBe(false)
     })
+
+    it('should handle non-Error thrown values', async () => {
+      await closeDriver()
+
+      // Mock a non-Error thrown value (e.g., string or object)
+      mockRun.mockRejectedValueOnce('Connection string error')
+
+      const result = await healthCheck()
+      expect(result).toBe(false)
+    })
   })
 
   describe('executeQuery', () => {

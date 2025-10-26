@@ -49,7 +49,7 @@ export async function healthCheck(): Promise<boolean> {
       await session.close()
     }
   } catch (error) {
-    console.error('Health check failed:', error)
+    console.error('Health check failed:', error instanceof Error ? error.message : 'Unknown error')
     return false
   }
 }
