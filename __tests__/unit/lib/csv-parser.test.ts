@@ -306,6 +306,47 @@ describe('CSV Parser', () => {
       // Restore original implementation
       vi.restoreAllMocks()
     })
+
+    it('should handle critical errors with missing meta.fields', async () => {
+      // Mock papaparse to return critical error with undefined meta.fields
+      const Papa = await import('papaparse')
+
+      vi.spyOn(Papa.default, 'parse').mockImplementationOnce((input: any, config: any): any => {
+        // Simulate critical error (unclosed quotes) with no data and undefined meta.fields
+        if (config && config.complete) {
+          config.complete({
+            data: [],
+            errors: [
+              {
+                type: 'Quotes',
+                code: 'UndetectableDelimiter',
+                message: 'Unable to detect delimiter',
+                row: 0,
+              },
+            ],
+            meta: {
+              delimiter: ',',
+              linebreak: '\n',
+              // fields is intentionally undefined to test the || [] fallback
+            },
+          })
+        }
+        return undefined
+      })
+
+      const csv = 'invalid,"unclosed quote\ndata'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(false)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].type).toBe('Quotes')
+      expect(result.data).toHaveLength(0)
+      // Verify the fallback empty array is used for headers
+      expect(result.meta.headers).toEqual([])
+
+      // Restore original implementation
+      vi.restoreAllMocks()
+    })
   })
 
   describe('Type Inference', () => {
@@ -396,6 +437,16 @@ describe('CSV Parser', () => {
       expect(result.data).toHaveLength(2)
       // Arrays shouldn't be affected by type inference
       expect(result.data[0]).toBeInstanceOf(Array)
+    })
+
+    it('should handle type inference on CSV with only headers (empty data)', async () => {
+      const csv = 'name,age,city'
+      const result = await parseCSV(csv, { inferTypes: true })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(0)
+      expect(result.meta.headers).toEqual(['name', 'age', 'city'])
+      expect(result.meta.rowCount).toBe(0)
     })
   })
 })
