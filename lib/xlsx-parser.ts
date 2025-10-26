@@ -3,6 +3,11 @@ import * as XLSX from 'xlsx'
 // Re-export shared types from CSV parser for consistency
 export type { ParseResult, ParseError, ParseOptions } from './csv-parser'
 
+// Constants for file format validation
+const ZIP_MAGIC_BYTE_1 = 0x50 // 'P' - ZIP files start with "PK"
+const ZIP_MAGIC_BYTE_2 = 0x4b // 'K'
+const MIN_ZIP_HEADER_SIZE = 4
+
 /**
  * Builds an error response for parsing failures
  */
@@ -131,17 +136,77 @@ async function readFileAsBuffer(file: File): Promise<ArrayBuffer> {
 }
 
 /**
- * Checks if a row is empty (all values are empty strings or undefined)
+ * Checks if a row is empty (all values are empty strings, null, or undefined)
+ * @param row - The row object to check
+ * @returns True if all values in the row are empty
  */
 function isEmptyRow(row: Record<string, unknown>): boolean {
   return Object.values(row).every((val) => val === '' || val === null || val === undefined)
 }
 
 /**
- * Parses XLSX data from Buffer or File input
+ * Processes a single row to merge raw and formatted values, handling dates
+ * @param row - The formatted row data
+ * @param rawNumericRow - The raw numeric row data
+ * @returns Processed row with correct data types
+ */
+function processRow(
+  row: Record<string, unknown>,
+  rawNumericRow: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const newRow: Record<string, any> = {}
+
+  Object.entries(row).forEach(([key, value]) => {
+    // Get raw value for this cell (could be number, Date, or other type)
+    const rawValue = rawNumericRow?.[key]
+
+    // Prefer Date objects from raw data (cellDates: true converts them)
+    if (rawValue instanceof Date) {
+      newRow[key] = rawValue
+    }
+    // For numeric cells that were formatted as strings, use raw numeric value
+    else if (typeof rawValue === 'number' && typeof value === 'string') {
+      newRow[key] = rawValue
+    }
+    // Otherwise use the formatted value
+    else {
+      newRow[key] = value
+    }
+  })
+  return newRow
+}
+
+/**
+ * Parses XLSX data from Buffer or File input with comprehensive validation and type handling
+ *
+ * Features:
+ * - Validates XLSX format using ZIP magic bytes
+ * - Parses first sheet only (multi-sheet support reserved for future)
+ * - Converts Excel date serials to JavaScript Date objects automatically
+ * - Preserves numeric values (not formatted strings)
+ * - Handles merged cells (value in first cell of merge range)
+ * - Includes hidden columns in output
+ * - Supports header transformation and type inference
+ * - Compatible with CSV parser's ParseResult interface
+ *
  * @param input - XLSX Buffer or File object to parse
- * @param options - Parsing options (headers, type inference, etc.)
+ * @param options - Parsing options:
+ *   - header: Include headers (default: true)
+ *   - transformHeader: Function to transform header names
+ *   - skipEmptyLines: Skip rows with all empty values (default: true)
+ *   - inferTypes: Automatically infer and convert column types (default: false)
  * @returns Promise resolving to ParseResult with data, errors, and metadata
+ *
+ * @example
+ * ```typescript
+ * const buffer = fs.readFileSync('data.xlsx')
+ * const result = await parseXLSX(buffer, { inferTypes: true })
+ * if (result.success) {
+ *   console.log(`Parsed ${result.meta.rowCount} rows`)
+ *   console.log(result.data)
+ * }
+ * ```
  */
 export async function parseXLSX<T = Record<string, string | number>>(
   input: Buffer | File,
@@ -169,7 +234,7 @@ export async function parseXLSX<T = Record<string, string | number>>(
 
     // Validate XLSX file format (XLSX files are ZIP files, start with 'PK' signature)
     const bytes = buffer instanceof Buffer ? buffer : Buffer.from(new Uint8Array(buffer))
-    if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+    if (bytes.length < MIN_ZIP_HEADER_SIZE || bytes[0] !== ZIP_MAGIC_BYTE_1 || bytes[1] !== ZIP_MAGIC_BYTE_2) {
       return buildErrorResponse([
         {
           type: 'Error',
@@ -282,30 +347,7 @@ export async function parseXLSX<T = Record<string, string | number>>(
 
     // Process data to handle dates and numbers correctly BEFORE transformations
     // Merge raw numeric values with formatted strings and detect dates
-    const processedData = rawData.map((row, rowIndex) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const newRow: Record<string, any> = {}
-      const rawNumericRow = rawNumericData[rowIndex]
-
-      Object.entries(row).forEach(([key, value]) => {
-        // Get raw value for this cell (could be number, Date, or other type)
-        const rawValue = rawNumericRow?.[key]
-
-        // Prefer Date objects from raw data (cellDates: true converts them)
-        if (rawValue instanceof Date) {
-          newRow[key] = rawValue
-        }
-        // For numeric cells that were formatted as strings, use raw numeric value
-        else if (typeof rawValue === 'number' && typeof value === 'string') {
-          newRow[key] = rawValue
-        }
-        // Otherwise use the formatted value
-        else {
-          newRow[key] = value
-        }
-      })
-      return newRow
-    })
+    const processedData = rawData.map((row, rowIndex) => processRow(row, rawNumericData[rowIndex]))
 
     // Apply header transformation if provided
     let transformedData = processedData
