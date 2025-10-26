@@ -283,14 +283,14 @@ describe('CSV Parser', () => {
     it('should handle Papa.parse error callback', async () => {
       // Mock papaparse to trigger error callback
       const Papa = await import('papaparse')
-      const originalParse = Papa.default.parse
 
       // Temporarily replace parse with a version that triggers the error callback
-      vi.spyOn(Papa.default, 'parse').mockImplementationOnce((input: any, config: any) => {
+      vi.spyOn(Papa.default, 'parse').mockImplementationOnce((input: any, config: any): any => {
         // Simulate a catastrophic error by calling the error callback
-        if (config.error) {
-          config.error(new Error('Simulated Papa.parse error'), input)
+        if (config && config.error) {
+          config.error(new Error('Simulated Papa.parse error'))
         }
+        return undefined
       })
 
       const csv = 'name,age\nJohn,30'

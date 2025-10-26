@@ -84,9 +84,9 @@ function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
 
   // For each column, check if all values can be converted to a specific type
   const firstRow = data[0]
-  if (typeof firstRow !== 'object' || Array.isArray(firstRow)) return data
+  if (typeof firstRow !== 'object' || firstRow === null || Array.isArray(firstRow)) return data
 
-  const columns = Object.keys(firstRow)
+  const columns = Object.keys(firstRow as object)
   const columnTypes: Record<string, 'number' | 'boolean' | 'date' | 'string'> = {}
 
   // Determine type for each column
@@ -96,7 +96,8 @@ function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
     let isDate = true
 
     for (const row of data) {
-      const value = (row as any)[col]
+      const rowData = row as Record<string, string>
+      const value = rowData[col]
       if (value === '' || value === null || value === undefined) continue
 
       // Check number
@@ -127,9 +128,10 @@ function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
 
   // Convert values based on inferred types
   return data.map((row) => {
-    const converted: any = { ...row }
+    const rowData = row as Record<string, string>
+    const converted: Record<string, string | number | boolean | Date> = { ...rowData }
     columns.forEach((col) => {
-      const value = (row as any)[col]
+      const value = rowData[col]
       if (value === '' || value === null || value === undefined) return
 
       switch (columnTypes[col]) {
@@ -236,7 +238,7 @@ export async function parseCSV<T = Record<string, string>>(
           )
         }
       },
-      error: (error) => {
+      error: (error: Error) => {
         resolve(
           buildErrorResponse([
             {
@@ -247,8 +249,9 @@ export async function parseCSV<T = Record<string, string>>(
           ])
         )
       },
-    }
+    } as Papa.ParseConfig
 
-    Papa.parse(input, config)
+    // Type assertion needed due to Papa.parse overload complexity
+    Papa.parse(input as string, config as Papa.ParseConfig<unknown, undefined>)
   })
 }
