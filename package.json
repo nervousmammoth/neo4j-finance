@@ -23,6 +23,7 @@
     "lucide-react": "^0.548.0",
     "neo4j-driver": "^6.0.0",
     "next": "^15.1.8",
+    "papaparse": "^5.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.1"
@@ -36,6 +37,7 @@
     "@types/babel__template": "^7.4.4",
     "@types/babel__traverse": "^7.28.0",
     "@types/node": "^22.10.5",
+    "@types/papaparse": "^5.3.16",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^4.3.4",

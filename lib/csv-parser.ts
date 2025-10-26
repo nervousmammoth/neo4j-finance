@@ -189,9 +189,9 @@ export async function parseCSV<T = Record<string, string>>(
       delimiter: options.delimiter || '',
       skipEmptyLines: options.skipEmptyLines !== false ? 'greedy' : false,
       transformHeader: options.transformHeader || ((h) => h.trim()),
-      complete: (results) => {
+      complete: (results: Papa.ParseResult<T>) => {
         // Filter critical vs non-critical errors
-        const criticalErrors = results.errors.filter((err) =>
+        const criticalErrors = results.errors.filter((err: Papa.ParseError) =>
           isCriticalError(err, results.data.length)
         )
 
@@ -199,7 +199,7 @@ export async function parseCSV<T = Record<string, string>>(
           // Only fail if there are critical errors AND no data was parsed
           resolve(
             buildErrorResponse(
-              criticalErrors.map((err) => ({
+              criticalErrors.map((err: Papa.ParseError) => ({
                 type: err.type,
                 code: err.code,
                 message: err.message,
@@ -221,7 +221,7 @@ export async function parseCSV<T = Record<string, string>>(
           }
 
           // Map non-critical errors to warnings
-          const warnings = results.errors.map((err) => ({
+          const warnings = results.errors.map((err: Papa.ParseError) => ({
             type: err.type,
             code: err.code,
             message: err.message,
