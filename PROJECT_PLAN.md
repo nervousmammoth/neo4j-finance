@@ -196,8 +196,8 @@ All nodes include `dataset_id` property to allow multiple datasets in one databa
 ## Issue Breakdown (27 Issues)
 
 ### Phase 1: Foundation & Setup (Issues 001-005)
-- **001**: Project setup, Vitest, Playwright, shadcn/ui, Git/GitHub ⏳ IN PROGRESS
-- **002**: Neo4j connection manager
+- **001**: Project setup, Vitest, shadcn/ui, Git/GitHub ✅ COMPLETE
+- **002**: Neo4j connection manager 📍 NEXT
 - **003**: CSV parser with validation
 - **004**: XLSX parser with validation
 - **005**: Schema validator (Zod schemas for all entities)
@@ -235,62 +235,44 @@ All nodes include `dataset_id` property to allow multiple datasets in one databa
 ## Current Status
 
 ### Completed ✅
-- ✅ All 27 issue definition files created in `/issues/`
-- ✅ Issues folder backed up to `/tmp/issues-backup`
+- ✅ **Issue 001**: Project Setup, Testing Infrastructure, GitHub Integration
+  - Next.js 15.1.8 + React 19 + TypeScript
+  - Vitest with 100% coverage enforcement
+  - Pre-commit hooks (Husky): type-check, lint, tests
+  - Simplified GitHub Actions CI (type-check + build)
+  - shadcn/ui configured
+  - E2E tests removed (not needed with 100% unit coverage)
+  - PR #1 merged to main
+  - Issue moved to `/issues/completed/001.md`
 
 ### In Progress ⏳
-- ⏳ **Issue 001**: Initializing Next.js 15 project
-  - Background task running: Installing npm dependencies
-  - Task ID: 5e1a2c
-  - Status: Installing react, react-dom, next, typescript, tailwind, eslint, etc.
+- 📍 **Ready to start Issue 002**: Neo4j Connection Manager
 
-### Pending
-- Configure Vitest with React Testing Library
-- Configure Playwright for E2E tests
-- Set up shadcn/ui
-- Initialize git repository
-- Create GitHub repository
-- Set up GitHub Actions CI/CD
-- Create PR template
-- Create first PR for Issue 001
+### Pending (Issues 002-027)
+See `/issues/` directory and PROJECT_PLAN.md for details
 
 ## Next Steps
 
-### Immediate (Issue 001 completion)
-1. ✅ Wait for Next.js installation to complete
-2. Move installed Next.js project from `/home/christoph/neo4j-temp` to `/home/christoph/neo4j-finance-frontend`
-3. Restore `/issues/` folder from backup
-4. Install additional dependencies:
-   ```bash
-   npm install -D vitest @vitejs/plugin-react @testing-library/react @testing-library/jest-dom @testing-library/user-event jsdom
-   npm install -D @playwright/test
-   ```
-5. Create configuration files:
-   - `vitest.config.ts`
-   - `vitest.setup.ts`
-   - `playwright.config.ts`
-6. Create smoke tests:
-   - `__tests__/unit/smoke.test.ts`
-   - `__tests__/e2e/smoke.spec.ts`
-7. Update `package.json` scripts
-8. Create `.github/` structure with workflows
-9. Create PR template
-10. Initialize git: `git init`
-11. **Guide user to create GitHub repo** (manual step)
-12. Create first commit and push to main
-13. Create branch: `issue/001-project-setup`
-14. Create PR for Issue 001
-15. **Wait for PR approval and merge** ⚠️ BLOCKER for Issue 002
+### Immediate (Issue 002 - Neo4j Connection Manager)
+1. Read `/issues/002.md` for requirements
+2. Create branch: `git checkout -b issue/002-neo4j-connection`
+3. Follow TDD cycle:
+   - RED: Write failing tests in `__tests__/unit/neo4j.test.ts`
+   - GREEN: Implement `lib/neo4j.ts`
+   - REFACTOR: Improve code quality
+4. Pre-commit hook enforces 100% coverage
+5. Create PR and wait for approval
+6. Merge and move to next issue
 
-### Subsequent Issues (002-027)
-Each issue follows the same workflow:
+### Standard Workflow (All Issues)
+See `.claude/claude.md` for detailed workflow:
 1. Create branch from main
 2. RED → GREEN → REFACTOR (TDD cycle)
 3. Create PR
-4. CI runs automatically
-5. Get approval
-6. Merge
-7. Only then proceed to next issue
+4. CI runs (type-check + build)
+5. Get approval and merge
+6. Move issue to `/issues/completed/`
+7. Proceed to next issue
 
 ## Environment Variables
 
@@ -392,6 +374,7 @@ Project is complete when:
 
 ---
 
-**Last Updated**: 2025-10-25
-**Status**: Issue 001 in progress
-**Next Milestone**: Complete Issue 001 and create first PR
+**Last Updated**: 2025-10-26
+**Status**: Issue 001 complete ✅ (PR #1 merged)
+**Next Milestone**: Issue 002 - Neo4j Connection Manager
+**Progress**: 1/27 issues complete (3.7%)
