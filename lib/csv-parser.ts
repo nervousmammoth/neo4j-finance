@@ -24,7 +24,7 @@ export interface ParseOptions {
   delimiter?: string
   skipEmptyLines?: boolean
   transformHeader?: (header: string) => string
-  /** Enable streaming mode for large files (processes data in chunks) */
+  /** Enable streaming mode for large files (processes data in chunks) - RESERVED FOR FUTURE IMPLEMENTATION */
   streaming?: boolean
   /** Automatically infer and convert column types (string -> number/boolean/date) */
   inferTypes?: boolean
@@ -78,15 +78,18 @@ function buildSuccessResponse<T>(
 /**
  * Infers and converts column values to appropriate types
  * Detects: numbers, booleans, dates, null values
+ * Returns data with mixed types (string | number | boolean | Date)
  */
-function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
-  if (data.length === 0) return data
+function inferColumnTypes(
+  data: Record<string, string>[]
+): Record<string, string | number | boolean | Date>[] {
+  if (data.length === 0) return []
 
   // For each column, check if all values can be converted to a specific type
   const firstRow = data[0]
   if (typeof firstRow !== 'object' || firstRow === null || Array.isArray(firstRow)) return data
 
-  const columns = Object.keys(firstRow as object)
+  const columns = Object.keys(firstRow)
   const columnTypes: Record<string, 'number' | 'boolean' | 'date' | 'string'> = {}
 
   // Determine type for each column
@@ -96,8 +99,7 @@ function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
     let isDate = true
 
     for (const row of data) {
-      const rowData = row as Record<string, string>
-      const value = rowData[col]
+      const value = row[col]
       if (value === '' || value === null || value === undefined) continue
 
       // Check number
@@ -110,8 +112,9 @@ function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
         isBoolean = false
       }
 
-      // Check date (simplified check)
-      if (isDate && isNaN(Date.parse(value))) {
+      // Check date - exclude plain numeric strings to avoid false positives
+      // e.g., '123' should be a number, not a date
+      if (isDate && (isNaN(Date.parse(value)) || /^\d+$/.test(value.trim()))) {
         isDate = false
       }
 
@@ -128,10 +131,9 @@ function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
 
   // Convert values based on inferred types
   return data.map((row) => {
-    const rowData = row as Record<string, string>
-    const converted: Record<string, string | number | boolean | Date> = { ...rowData }
+    const converted: Record<string, string | number | boolean | Date> = { ...row }
     columns.forEach((col) => {
-      const value = rowData[col]
+      const value = row[col]
       if (value === '' || value === null || value === undefined) return
 
       switch (columnTypes[col]) {
@@ -147,7 +149,7 @@ function inferColumnTypes<T = Record<string, string>>(data: T[]): T[] {
         // string: no conversion needed
       }
     })
-    return converted as T
+    return converted
   })
 }
 
@@ -217,7 +219,9 @@ export async function parseCSV<T = Record<string, string>>(
           // Parse succeeded - apply type inference if requested
           let data = results.data as T[]
           if (options.inferTypes) {
-            data = inferColumnTypes(data)
+            // Type inference changes string values to number/boolean/Date
+            // Cast back to T[] as caller expects the generic type
+            data = inferColumnTypes(data as unknown as Record<string, string>[]) as T[]
           }
 
           // Map non-critical errors to warnings
@@ -252,6 +256,10 @@ export async function parseCSV<T = Record<string, string>>(
     } as Papa.ParseConfig
 
     // Type assertion needed due to Papa.parse overload complexity
-    Papa.parse(input as string, config as Papa.ParseConfig<unknown, undefined>)
+    // Papa.parse correctly handles both string and File objects at runtime
+    // TypeScript types don't properly reflect this, so we use 'any' cast
+    // This is safe because papaparse internally handles both types correctly
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Papa.parse(input as any, config)
   })
 }
