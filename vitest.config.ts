@@ -24,6 +24,7 @@ export default defineConfig({
         'app/**', // Exclude app skeleton for Issue 001
         'lib/utils.ts', // Exclude utils boilerplate for Issue 001
         'components/ui/**', // Exclude shadcn components
+        'test-*.ts', // Exclude manual test scripts
       ],
       thresholds: {
         branches: 100,
