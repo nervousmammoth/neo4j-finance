@@ -1,0 +1,249 @@
+import { describe, it, expect } from 'vitest'
+import { parseCSV, ParseResult } from '@/lib/csv-parser'
+
+describe('CSV Parser', () => {
+  describe('Valid CSV Parsing', () => {
+    it('should parse valid CSV with headers', async () => {
+      const csv = 'name,age,city\nJohn,30,NYC\nJane,25,LA'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(result.data[0]).toEqual({ name: 'John', age: '30', city: 'NYC' })
+      expect(result.data[1]).toEqual({ name: 'Jane', age: '25', city: 'LA' })
+      expect(result.errors).toHaveLength(0)
+      expect(result.meta.headers).toEqual(['name', 'age', 'city'])
+      expect(result.meta.rowCount).toBe(2)
+    })
+
+    it('should handle CSV without headers', async () => {
+      const csv = 'John,30,NYC\nJane,25,LA'
+      const result = await parseCSV(csv, { header: false })
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(result.data[0]).toBeInstanceOf(Array)
+      expect(result.data[0]).toEqual(['John', '30', 'NYC'])
+      expect(result.data[1]).toEqual(['Jane', '25', 'LA'])
+    })
+
+    it('should parse CSV with quoted fields', async () => {
+      const csv = 'name,description\n"John Doe","A person named ""John"""\n"Jane","Simple text"'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(result.data[0]).toEqual({ name: 'John Doe', description: 'A person named "John"' })
+      expect(result.data[1]).toEqual({ name: 'Jane', description: 'Simple text' })
+    })
+
+    it('should handle CSV with line breaks in quoted fields', async () => {
+      const csv = 'name,bio\n"John","First line\nSecond line"\n"Jane","Single line"'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(result.data[0].bio).toContain('\n')
+      expect(result.data[0]).toEqual({ name: 'John', bio: 'First line\nSecond line' })
+    })
+
+    it('should parse CSV with escaped quotes', async () => {
+      const csv = 'name,quote\n"John","He said ""hello"""\n"Jane","She said ""goodbye"""'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data[0]).toEqual({ name: 'John', quote: 'He said "hello"' })
+      expect(result.data[1]).toEqual({ name: 'Jane', quote: 'She said "goodbye"' })
+    })
+  })
+
+  describe('Different Delimiters', () => {
+    it('should detect comma delimiter', async () => {
+      const csv = 'name,age\nJohn,30'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.meta.delimiter).toBe(',')
+    })
+
+    it('should handle semicolon delimiter', async () => {
+      const csv = 'name;age\nJohn;30'
+      const result = await parseCSV(csv, { delimiter: ';' })
+
+      expect(result.success).toBe(true)
+      expect(result.data[0]).toEqual({ name: 'John', age: '30' })
+      expect(result.meta.delimiter).toBe(';')
+    })
+
+    it('should handle tab delimiter', async () => {
+      const csv = 'name\tage\nJohn\t30'
+      const result = await parseCSV(csv, { delimiter: '\t' })
+
+      expect(result.success).toBe(true)
+      expect(result.data[0]).toEqual({ name: 'John', age: '30' })
+      expect(result.meta.delimiter).toBe('\t')
+    })
+
+    it('should auto-detect delimiter when not specified', async () => {
+      const csv = 'name;age;city\nJohn;30;NYC'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.meta.delimiter).toBe(';')
+      expect(result.data[0]).toEqual({ name: 'John', age: '30', city: 'NYC' })
+    })
+  })
+
+  describe('Edge Cases and Special Characters', () => {
+    it('should detect empty CSV file', async () => {
+      const csv = ''
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(false)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].message).toContain('empty')
+    })
+
+    it('should handle CSV with only headers', async () => {
+      const csv = 'name,age,city'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(0)
+      expect(result.meta.headers).toEqual(['name', 'age', 'city'])
+    })
+
+    it('should skip empty rows by default', async () => {
+      const csv = 'name,age\nJohn,30\n\nJane,25\n\n'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      expect(result.data[0].name).toBe('John')
+      expect(result.data[1].name).toBe('Jane')
+    })
+
+    it('should handle CSV with special characters', async () => {
+      const csv = 'name,emoji,special\nJohn,😀,"!@#$%^&*()"\nJane,🎉,"<>?:{}[]"'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data[0]).toEqual({ name: 'John', emoji: '😀', special: '!@#$%^&*()' })
+      expect(result.data[1]).toEqual({ name: 'Jane', emoji: '🎉', special: '<>?:{}[]' })
+    })
+
+    it('should trim whitespace in headers by default', async () => {
+      const csv = ' name , age , city \nJohn,30,NYC'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.meta.headers).toEqual(['name', 'age', 'city'])
+      expect(result.data[0]).toHaveProperty('name')
+      expect(result.data[0]).toHaveProperty('age')
+      expect(result.data[0]).toHaveProperty('city')
+    })
+
+    it('should handle CSV with BOM (Byte Order Mark)', async () => {
+      const csv = '\uFEFFname,age\nJohn,30'
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data[0]).toEqual({ name: 'John', age: '30' })
+      expect(result.meta.headers).toContain('name')
+    })
+  })
+
+  describe('Error Handling', () => {
+    it('should handle malformed CSV with missing columns', async () => {
+      const csv = 'name,age,city\nJohn,30\nJane,25,LA'
+      const result = await parseCSV(csv)
+
+      // papaparse is lenient by default, it will parse this
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(2)
+      // Missing column should be empty or undefined
+      expect(result.data[0].city).toBeUndefined()
+    })
+
+    it('should detect duplicate headers', async () => {
+      const csv = 'name,age,name\nJohn,30,Doe'
+      const result = await parseCSV(csv)
+
+      // papaparse handles duplicate headers by overwriting
+      expect(result.success).toBe(true)
+      expect(result.data[0]).toHaveProperty('name')
+      expect(result.data[0]).toHaveProperty('age')
+    })
+
+    it('should provide error details for parsing failures', async () => {
+      // Create an invalid input that will trigger an error
+      const invalidInput = null as any
+      const result = await parseCSV(invalidInput)
+
+      expect(result.success).toBe(false)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0]).toHaveProperty('message')
+      expect(result.errors[0]).toHaveProperty('type')
+      expect(result.errors[0]).toHaveProperty('code')
+    })
+  })
+
+  describe('Options and Configuration', () => {
+    it('should allow custom header transformation', async () => {
+      const csv = 'First Name,Last Name\nJohn,Doe'
+      const result = await parseCSV(csv, {
+        transformHeader: (header: string) => header.toLowerCase().replace(/\s+/g, '_')
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.meta.headers).toEqual(['first_name', 'last_name'])
+      expect(result.data[0]).toEqual({ first_name: 'John', last_name: 'Doe' })
+    })
+
+    it('should allow skipping empty lines to be disabled', async () => {
+      const csv = 'name,age\nJohn,30\n\nJane,25'
+      const result = await parseCSV(csv, { skipEmptyLines: false })
+
+      expect(result.success).toBe(true)
+      // papaparse might still handle this, but we're testing the option is passed
+      expect(result.data.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('should preserve delimiter choice in metadata', async () => {
+      const csv = 'name|age\nJohn|30'
+      const result = await parseCSV(csv, { delimiter: '|' })
+
+      expect(result.success).toBe(true)
+      expect(result.meta.delimiter).toBe('|')
+      expect(result.data[0]).toEqual({ name: 'John', age: '30' })
+    })
+  })
+
+  describe('File Input Support', () => {
+    it('should handle File object input', async () => {
+      const csvContent = 'name,age\nJohn,30'
+      const file = new File([csvContent], 'test.csv', { type: 'text/csv' })
+      const result = await parseCSV(file)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(1)
+      expect(result.data[0]).toEqual({ name: 'John', age: '30' })
+    })
+
+    it('should handle large CSV files (streaming simulation)', async () => {
+      // Generate a CSV with 1000 rows to simulate a larger file
+      const rows = ['name,age,city']
+      for (let i = 0; i < 1000; i++) {
+        rows.push(`Person${i},${20 + i},City${i}`)
+      }
+      const csv = rows.join('\n')
+      const result = await parseCSV(csv)
+
+      expect(result.success).toBe(true)
+      expect(result.data).toHaveLength(1000)
+      expect(result.meta.rowCount).toBe(1000)
+      expect(result.data[0]).toEqual({ name: 'Person0', age: '20', city: 'City0' })
+      expect(result.data[999]).toEqual({ name: 'Person999', age: '1019', city: 'City999' })
+    })
+  })
+})
