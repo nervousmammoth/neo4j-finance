@@ -18,6 +18,7 @@ export default defineConfig({
         '__tests__/',
         '*.config.*',
         '**/*.d.ts',
+        '**/*.types.ts', // Exclude type definition files
         '.next/',
         'coverage/',
         'issues/',
