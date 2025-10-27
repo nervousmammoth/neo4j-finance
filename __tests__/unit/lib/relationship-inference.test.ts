@@ -310,6 +310,22 @@ describe('Relationship Inference Engine', () => {
       expect(Array.isArray(result)).toBe(true)
     })
 
+    it('should handle FK without targetEntity', () => {
+      const foreignKeys: ForeignKey[] = [
+        {
+          columnName: 'some_id',
+          confidence: 0.75,
+          targetEntity: undefined,
+          patternType: 'suffix_id',
+        },
+      ]
+
+      const result = inferRelationships(foreignKeys, 'Account')
+
+      // Should handle gracefully, likely skip since targetEntity is undefined
+      expect(Array.isArray(result)).toBe(true)
+    })
+
     it('should handle ambiguous relationship scenarios', () => {
       // Multiple possible interpretations - should pick most likely
       const foreignKeys: ForeignKey[] = [
@@ -588,6 +604,44 @@ describe('Relationship Inference Engine', () => {
       const cypher = generateBatchRelationshipCypher(relationships)
 
       expect(cypher).toBe('')
+    })
+
+    it('should handle complex property types in Cypher generation', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Company',
+        foreignKeyColumn: 'company_id',
+        confidence: 0.95,
+        properties: {
+          active: true,
+          metadata: { foo: 'bar' },
+          tags: ['shareholder', 'board-member'],
+        },
+      }
+
+      const cypher = generateRelationshipCypher(relationship, 'p1', 'c1')
+
+      expect(cypher).toContain('active')
+      expect(cypher).toContain('metadata')
+      expect(cypher).toContain('tags')
+    })
+
+    it('should generate Cypher without properties when none are provided', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+        // No properties field
+      }
+
+      const cypher = generateRelationshipCypher(relationship, 'p1', 'a1')
+
+      // Should still include confidence but in a clean way
+      expect(cypher).toContain('OWNS')
+      expect(cypher).toContain('confidence: 0.95')
     })
   })
 
