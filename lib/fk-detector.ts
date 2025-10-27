@@ -44,130 +44,181 @@ export interface FKDetectorOptions {
 }
 
 /**
- * Built-in pattern detection rules for common foreign key patterns
+ * Built-in pattern detection rules for common foreign key patterns.
+ *
+ * Each rule consists of:
+ * - pattern: Regular expression to match column names
+ * - confidence: Score from 0.0 to 1.0 indicating match quality
+ * - targetEntity: Optional entity this FK references
+ * - patternType: Classification of the pattern (domain_specific, iban, suffix_id, etc.)
+ * - extractEntity: Optional function to derive entity name from column name
  */
 interface PatternRule {
+  /** Regular expression to match column names */
   pattern: RegExp
+  /** Confidence score (0.0 - 1.0) for this pattern */
   confidence: number
+  /** Target entity this foreign key references (optional) */
   targetEntity?: string
+  /** Type/category of this pattern */
   patternType: string
+  /** Function to extract entity name from column name (optional) */
   extractEntity?: (columnName: string) => string
 }
 
 /**
- * Default foreign key detection patterns for banking domain
+ * Confidence level constants for pattern matching.
+ * These define standard confidence scores used throughout the detector.
+ */
+const CONFIDENCE = {
+  /** Very high confidence - exact domain-specific patterns */
+  VERY_HIGH: 0.95,
+  /** High confidence - strong indicators like *_id, *_iban patterns */
+  HIGH: 0.90,
+  /** Medium-high confidence - camelCase variants of strong patterns */
+  MEDIUM_HIGH: 0.80,
+  /** Medium confidence - camelCase ID patterns */
+  MEDIUM: 0.75,
+  /** Low confidence - weak indicators like 'ref' or 'reference' */
+  LOW: 0.50,
+} as const
+
+/**
+ * Converts snake_case identifier to PascalCase entity name.
+ * Examples: 'bank_account' -> 'BankAccount', 'user_profile' -> 'UserProfile'
+ *
+ * @param snakeCaseId - Snake case identifier (e.g., 'bank_account_id')
+ * @returns PascalCase entity name
+ */
+function snakeCaseToPascalCase(snakeCaseId: string): string {
+  return snakeCaseId
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join('')
+}
+
+/**
+ * Capitalizes the first letter of a string.
+ * Examples: 'person' -> 'Person', 'bankAccount' -> 'BankAccount'
+ *
+ * @param str - String to capitalize
+ * @returns Capitalized string
+ */
+function capitalizeFirst(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1)
+}
+
+/**
+ * Default foreign key detection patterns for banking domain.
+ *
+ * Patterns are ordered by specificity (most specific first).
+ * When multiple patterns match a column, the highest confidence wins.
  */
 const DEFAULT_PATTERNS: PatternRule[] = [
-  // Domain-specific patterns (HIGH confidence: 0.95)
+  // Domain-specific patterns (VERY_HIGH confidence)
   {
     pattern: /^bank_id$/i,
-    confidence: 0.95,
+    confidence: CONFIDENCE.VERY_HIGH,
     targetEntity: 'Bank',
     patternType: 'domain_specific',
   },
   {
     pattern: /^person_id$/i,
-    confidence: 0.95,
+    confidence: CONFIDENCE.VERY_HIGH,
     targetEntity: 'Person',
     patternType: 'domain_specific',
   },
   {
     pattern: /^company_id$/i,
-    confidence: 0.95,
+    confidence: CONFIDENCE.VERY_HIGH,
     targetEntity: 'Company',
     patternType: 'domain_specific',
   },
   {
     pattern: /^account_id$/i,
-    confidence: 0.95,
+    confidence: CONFIDENCE.VERY_HIGH,
     targetEntity: 'BankAccount',
     patternType: 'domain_specific',
   },
   {
     pattern: /^transaction_id$/i,
-    confidence: 0.95,
+    confidence: CONFIDENCE.VERY_HIGH,
     targetEntity: 'Transaction',
     patternType: 'domain_specific',
   },
   {
     pattern: /^parent_id$/i,
-    confidence: 0.90,
+    confidence: CONFIDENCE.HIGH,
     targetEntity: 'Person',
     patternType: 'domain_specific',
   },
 
-  // IBAN patterns - snake_case (HIGH confidence: 0.90)
+  // IBAN patterns - snake_case (HIGH confidence)
   {
     pattern: /^from_iban$/i,
-    confidence: 0.90,
+    confidence: CONFIDENCE.HIGH,
     targetEntity: 'BankAccount',
     patternType: 'iban',
   },
   {
     pattern: /^to_iban$/i,
-    confidence: 0.90,
+    confidence: CONFIDENCE.HIGH,
     targetEntity: 'BankAccount',
     patternType: 'iban',
   },
   {
     pattern: /.*_iban$/i,
-    confidence: 0.90,
+    confidence: CONFIDENCE.HIGH,
     targetEntity: 'BankAccount',
     patternType: 'iban',
   },
 
-  // IBAN patterns - camelCase (MEDIUM-HIGH confidence: 0.80)
+  // IBAN patterns - camelCase (MEDIUM_HIGH confidence)
   {
     pattern: /^fromIban$/,
-    confidence: 0.80,
+    confidence: CONFIDENCE.MEDIUM_HIGH,
     targetEntity: 'BankAccount',
     patternType: 'iban',
   },
   {
     pattern: /^toIban$/,
-    confidence: 0.80,
+    confidence: CONFIDENCE.MEDIUM_HIGH,
     targetEntity: 'BankAccount',
     patternType: 'iban',
   },
   {
     pattern: /.*Iban$/,
-    confidence: 0.80,
+    confidence: CONFIDENCE.MEDIUM_HIGH,
     targetEntity: 'BankAccount',
     patternType: 'iban',
   },
 
-  // Generic *_id patterns - snake_case (HIGH confidence: 0.90)
+  // Generic *_id patterns - snake_case (HIGH confidence)
   {
     pattern: /^(\w+)_id$/i,
-    confidence: 0.90,
+    confidence: CONFIDENCE.HIGH,
     patternType: 'suffix_id',
     extractEntity: (columnName: string) => {
       const match = columnName.match(/^(\w+)_id$/i)!
-      // Convert snake_case to PascalCase
-      return match[1]
-        .split('_')
-        .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-        .join('')
+      return snakeCaseToPascalCase(match[1])
     },
   },
 
-  // Generic *Id patterns - camelCase (MEDIUM confidence: 0.75)
+  // Generic *Id patterns - camelCase (MEDIUM confidence)
   {
     pattern: /^(\w+)Id$/,
-    confidence: 0.75,
+    confidence: CONFIDENCE.MEDIUM,
     patternType: 'suffix_id_camel',
     extractEntity: (columnName: string) => {
       const match = columnName.match(/^(\w+)Id$/)!
-      // Capitalize first letter
-      const entity = match[1]
-      return entity.charAt(0).toUpperCase() + entity.slice(1)
+      return capitalizeFirst(match[1])
     },
   },
 
-  // Reference patterns (LOW confidence: 0.50)
+  // Reference patterns (LOW confidence)
   {
     pattern: /.*_?ref(?:_|erence)?.*$/i,
-    confidence: 0.50,
+    confidence: CONFIDENCE.LOW,
     patternType: 'reference',
   },
 ]
