@@ -153,8 +153,8 @@ describe('BankAccountSchema', () => {
     }
   })
 
-  it('should fail with negative balance', () => {
-    const invalidAccount = {
+  it('should allow negative balance (overdrafts)', () => {
+    const accountWithOverdraft = {
       account_id: 'ACC001',
       iban: 'DE89370400440532013000',
       bank_id: 'BNK001',
@@ -168,7 +168,7 @@ describe('BankAccountSchema', () => {
 
     // Note: This test expects negative balances to be VALID (overdrafts are common)
     // If you want to reject negative balances, adjust the schema accordingly
-    const result = BankAccountSchema.safeParse(invalidAccount)
+    const result = BankAccountSchema.safeParse(accountWithOverdraft)
     expect(result.success).toBe(true)
   })
 })
@@ -388,6 +388,47 @@ describe('TransactionSchema', () => {
       expect(result.error.issues[0].path).toContain('transaction_type')
     }
   })
+
+  it('should fail when flag_reason is provided without is_flagged being true', () => {
+    const invalidTransaction = {
+      transaction_id: 'TXN001',
+      from_iban: 'DE89370400440532013000',
+      to_iban: 'FR1420041010050500013M02606',
+      amount: 1500.00,
+      currency: 'EUR',
+      date: '2024-01-15 14:30:00',
+      transaction_type: 'WIRE',
+      is_flagged: false,
+      flag_reason: 'Suspicious activity', // flag_reason without is_flagged: true
+    }
+
+    const result = TransactionSchema.safeParse(invalidTransaction)
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues[0].path).toContain('flag_reason')
+      expect(result.error.issues[0].message).toContain('flag_reason can only be provided when is_flagged is true')
+    }
+  })
+
+  it('should allow flag_reason when is_flagged is true', () => {
+    const validTransaction = {
+      transaction_id: 'TXN001',
+      from_iban: 'DE89370400440532013000',
+      to_iban: 'FR1420041010050500013M02606',
+      amount: 1500.00,
+      currency: 'EUR',
+      date: '2024-01-15 14:30:00',
+      transaction_type: 'WIRE',
+      is_flagged: true,
+      flag_reason: 'High amount from new account', // Valid: flag_reason with is_flagged: true
+    }
+
+    const result = TransactionSchema.safeParse(validTransaction)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.flag_reason).toBe('High amount from new account')
+    }
+  })
 })
 
 describe('Batch Validation', () => {
@@ -464,7 +505,7 @@ describe('Batch Validation', () => {
       expect(result.valid[0].person_id).toBe('P001')
       expect(result.invalid[0].index).toBe(1)
       expect(result.invalid[1].index).toBe(2)
-      expect(result.invalid[0].errors).toBeDefined()
+      expect(result.invalid[0].issues).toBeDefined()
     })
   })
 
@@ -727,7 +768,7 @@ describe('Batch Validation', () => {
       const result = validateTransactionBatch(invalidData)
       expect(result.valid).toHaveLength(0)
       expect(result.invalid).toHaveLength(1)
-      expect(result.invalid[0].errors.issues.length).toBeGreaterThan(0)
+      expect(result.invalid[0].issues.length).toBeGreaterThan(0)
       expect(result.invalid[0].data).toEqual(invalidData[0])
     })
   })
