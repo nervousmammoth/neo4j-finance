@@ -133,6 +133,28 @@ describe('Foreign Key Detector', () => {
       expect(bankFK).toBeDefined()
       expect(companyFK).toBeDefined()
     })
+
+    it('should respect the caseInsensitive: false option', () => {
+      const headers = ['PERSON_ID', 'bank_id']
+      const result = detectForeignKeys(headers, { caseInsensitive: false })
+
+      // Only 'bank_id' should be detected with case-sensitive matching
+      // 'PERSON_ID' should NOT match because the patterns expect lowercase
+      expect(result).toHaveLength(1)
+      expect(result[0].columnName).toBe('bank_id')
+    })
+
+    it('should match camelCase patterns with caseInsensitive: false', () => {
+      const headers = ['personId', 'companyId', 'PERSONID']
+      const result = detectForeignKeys(headers, { caseInsensitive: false })
+
+      // camelCase patterns should match with exact case
+      expect(result).toHaveLength(2)
+      expect(result.map(fk => fk.columnName)).toContain('personId')
+      expect(result.map(fk => fk.columnName)).toContain('companyId')
+      // 'PERSONID' should NOT match because camelCase pattern requires exact case
+      expect(result.map(fk => fk.columnName)).not.toContain('PERSONID')
+    })
   })
 
   describe('Naming Conventions', () => {
@@ -189,6 +211,25 @@ describe('Foreign Key Detector', () => {
 
       // Should only detect valid column names
       expect(result.every((fk) => fk.columnName.length > 0)).toBe(true)
+    })
+
+    it('should match on trimmed headers but preserve original columnName', () => {
+      const headers = ['  person_id  ', ' name ', '  bank_id']
+      const result = detectForeignKeys(headers)
+
+      // Should detect FKs based on trimmed values
+      expect(result).toHaveLength(2)
+
+      // But preserve original columnName with whitespace
+      const personFK = result.find(fk => fk.columnName.trim() === 'person_id')
+      const bankFK = result.find(fk => fk.columnName.trim() === 'bank_id')
+
+      expect(personFK).toBeDefined()
+      expect(personFK!.columnName).toBe('  person_id  ')
+      expect(personFK!.targetEntity).toBe('Person')
+
+      expect(bankFK).toBeDefined()
+      expect(bankFK!.columnName).toBe('  bank_id')
     })
 
     it('should not treat primary keys as foreign keys', () => {
