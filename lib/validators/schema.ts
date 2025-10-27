@@ -1,6 +1,25 @@
 import { z } from 'zod'
 
 /**
+ * Regex pattern for ISO date format (YYYY-MM-DD).
+ * Used for validating dates across multiple schemas.
+ */
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Regex pattern for IBAN format validation.
+ * Validates basic IBAN structure: 2 uppercase letters + 2 digits + alphanumeric characters.
+ * Note: This validates format only, not checksum.
+ */
+const IBAN_PATTERN = /^[A-Z]{2}\d{2}[A-Z0-9]+$/
+
+/**
+ * Regex pattern for transaction date format.
+ * Accepts both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS formats.
+ */
+const TRANSACTION_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/
+
+/**
  * Validation schema for Person entities in the banking system.
  *
  * Represents individuals with Know Your Customer (KYC) information,
@@ -8,17 +27,17 @@ import { z } from 'zod'
  */
 export const PersonSchema = z.object({
   /** Unique identifier for the person */
-  person_id: z.string().min(1, 'Person ID is required'),
+  person_id: z.string().trim().min(1, 'Person ID is required'),
   /** Social Security Number (optional) */
   ssn: z.string().optional(),
   /** Person's first name */
-  first_name: z.string().min(1, 'First name is required'),
+  first_name: z.string().trim().min(1, 'First name is required'),
   /** Person's last name */
-  last_name: z.string().min(1, 'Last name is required'),
+  last_name: z.string().trim().min(1, 'Last name is required'),
   /** Date of birth in YYYY-MM-DD format */
-  date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  date_of_birth: z.string().regex(ISO_DATE_PATTERN, 'Date must be in YYYY-MM-DD format'),
   /** Country of nationality */
-  nationality: z.string().min(1, 'Nationality is required'),
+  nationality: z.string().trim().min(1, 'Nationality is required'),
   /** Risk assessment level for anti-money laundering (AML) purposes */
   risk_level: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'], {
     message: 'Risk level must be LOW, MEDIUM, HIGH, or CRITICAL'
@@ -41,25 +60,25 @@ export const PersonSchema = z.object({
  */
 export const BankAccountSchema = z.object({
   /** Unique identifier for the account */
-  account_id: z.string().min(1, 'Account ID is required'),
+  account_id: z.string().trim().min(1, 'Account ID is required'),
   /** International Bank Account Number (IBAN) with format validation */
-  iban: z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9]+$/, 'Invalid IBAN format (must start with 2 letters and 2 digits)'),
+  iban: z.string().regex(IBAN_PATTERN, 'Invalid IBAN format (must start with 2 letters and 2 digits)'),
   /** Reference to the bank that holds this account */
-  bank_id: z.string().min(1, 'Bank ID is required'),
+  bank_id: z.string().trim().min(1, 'Bank ID is required'),
   /** Type of bank account */
   account_type: z.enum(['CHECKING', 'SAVINGS', 'BUSINESS'], {
     message: 'Account type must be CHECKING, SAVINGS, or BUSINESS'
   }),
   /** Country where the account is held */
-  country: z.string().min(1, 'Country is required'),
+  country: z.string().trim().min(1, 'Country is required'),
   /** Currency code (defaults to EUR) */
   currency: z.string().default('EUR'),
   /** Current balance (can be negative for overdrafts) */
   current_balance: z.number(),
   /** Date the account was opened in YYYY-MM-DD format */
-  opened_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  opened_date: z.string().regex(ISO_DATE_PATTERN, 'Date must be in YYYY-MM-DD format'),
   /** Date the account was closed (optional, YYYY-MM-DD format) */
-  closed_date: z.string().optional(),
+  closed_date: z.string().regex(ISO_DATE_PATTERN, 'Date must be in YYYY-MM-DD format').optional(),
   /** Current status of the account */
   status: z.enum(['ACTIVE', 'CLOSED', 'FROZEN'], {
     message: 'Status must be ACTIVE, CLOSED, or FROZEN'
@@ -73,13 +92,13 @@ export const BankAccountSchema = z.object({
  */
 export const BankSchema = z.object({
   /** Unique identifier for the bank */
-  bank_id: z.string().min(1, 'Bank ID is required'),
+  bank_id: z.string().trim().min(1, 'Bank ID is required'),
   /** Full legal name of the bank */
-  name: z.string().min(1, 'Bank name is required'),
+  name: z.string().trim().min(1, 'Bank name is required'),
   /** Country where the bank is registered */
-  country: z.string().min(1, 'Country is required'),
+  country: z.string().trim().min(1, 'Country is required'),
   /** Bank's routing number or sort code */
-  routing_number: z.string().min(1, 'Routing number is required'),
+  routing_number: z.string().trim().min(1, 'Routing number is required'),
 })
 
 /**
@@ -90,21 +109,21 @@ export const BankSchema = z.object({
  */
 export const CompanySchema = z.object({
   /** Unique identifier for the company */
-  company_id: z.string().min(1, 'Company ID is required'),
+  company_id: z.string().trim().min(1, 'Company ID is required'),
   /** Official registration number */
-  registration_number: z.string().min(1, 'Registration number is required'),
+  registration_number: z.string().trim().min(1, 'Registration number is required'),
   /** Full legal name of the company */
-  name: z.string().min(1, 'Company name is required'),
+  name: z.string().trim().min(1, 'Company name is required'),
   /** Country of incorporation */
-  country: z.string().min(1, 'Country is required'),
+  country: z.string().trim().min(1, 'Country is required'),
   /** Primary business sector or industry */
-  business_type: z.string().min(1, 'Business type is required'),
+  business_type: z.string().trim().min(1, 'Business type is required'),
   /** Flag indicating if this is a shell company (used for AML screening) */
   is_shell_company: z.boolean({
     message: 'is_shell_company must be a boolean value'
   }),
   /** Date of incorporation in YYYY-MM-DD format */
-  incorporation_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  incorporation_date: z.string().regex(ISO_DATE_PATTERN, 'Date must be in YYYY-MM-DD format'),
   /** Current legal status of the company */
   status: z.enum(['ACTIVE', 'DISSOLVED', 'SUSPENDED'], {
     message: 'Status must be ACTIVE, DISSOLVED, or SUSPENDED'
@@ -119,17 +138,17 @@ export const CompanySchema = z.object({
  */
 export const TransactionSchema = z.object({
   /** Unique identifier for the transaction */
-  transaction_id: z.string().min(1, 'Transaction ID is required'),
+  transaction_id: z.string().trim().min(1, 'Transaction ID is required'),
   /** IBAN of the sending account */
-  from_iban: z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9]+$/, 'Invalid IBAN format for from_iban'),
+  from_iban: z.string().regex(IBAN_PATTERN, 'Invalid IBAN format for from_iban'),
   /** IBAN of the receiving account */
-  to_iban: z.string().regex(/^[A-Z]{2}\d{2}[A-Z0-9]+$/, 'Invalid IBAN format for to_iban'),
+  to_iban: z.string().regex(IBAN_PATTERN, 'Invalid IBAN format for to_iban'),
   /** Transaction amount (must be positive) */
   amount: z.number().positive('Amount must be positive'),
   /** Currency code (defaults to EUR) */
   currency: z.string().default('EUR'),
   /** Transaction date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format */
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/, 'Date must be in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format'),
+  date: z.string().regex(TRANSACTION_DATE_PATTERN, 'Date must be in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format'),
   /** Type of transaction */
   transaction_type: z.enum(['WIRE', 'TRANSFER', 'PAYMENT', 'CASH'], {
     message: 'Transaction type must be WIRE, TRANSFER, PAYMENT, or CASH'
@@ -142,6 +161,15 @@ export const TransactionSchema = z.object({
   is_flagged: z.boolean().default(false),
   /** Reason for flagging (optional) */
   flag_reason: z.string().optional(),
+}).superRefine((data, ctx) => {
+  // Enforce business rule: flag_reason should only be present when is_flagged is true
+  if (data.flag_reason && !data.is_flagged) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['flag_reason'],
+      message: 'flag_reason can only be provided when is_flagged is true',
+    })
+  }
 })
 
 /**
@@ -189,9 +217,43 @@ export interface BatchValidationResult<T> {
     index: number
     /** Original data that failed validation */
     data: unknown
-    /** Zod validation errors */
-    errors: z.ZodError
+    /** Zod validation issues (JSON-serializable) */
+    issues: z.ZodIssue[]
   }>
+}
+
+/**
+ * Creates a batch validator function for a given Zod schema.
+ * This factory eliminates code duplication across batch validators.
+ *
+ * @template T - The validated entity type
+ * @param schema - The Zod schema to validate against
+ * @returns A batch validation function
+ *
+ * @example
+ * ```ts
+ * const validateCustomBatch = createBatchValidator(CustomSchema)
+ * const result = validateCustomBatch(data)
+ * ```
+ */
+function createBatchValidator<T>(
+  schema: z.ZodType<T>
+): (data: unknown[]) => BatchValidationResult<T> {
+  return function (data: unknown[]): BatchValidationResult<T> {
+    const valid: T[] = []
+    const invalid: BatchValidationResult<T>['invalid'] = []
+
+    data.forEach((item, index) => {
+      const result = schema.safeParse(item)
+      if (result.success) {
+        valid.push(result.data)
+      } else {
+        invalid.push({ index, data: item, issues: result.error.issues })
+      }
+    })
+
+    return { valid, invalid }
+  }
 }
 
 /**
@@ -207,26 +269,12 @@ export interface BatchValidationResult<T> {
  * ```ts
  * const result = validatePersonBatch(csvData)
  * console.log(`Valid: ${result.valid.length}, Invalid: ${result.invalid.length}`)
- * result.invalid.forEach(({ index, errors }) => {
- *   console.log(`Row ${index + 1}: ${errors.message}`)
+ * result.invalid.forEach(({ index, issues }) => {
+ *   console.log(`Row ${index + 1}: ${issues[0]?.message}`)
  * })
  * ```
  */
-export function validatePersonBatch(data: unknown[]): BatchValidationResult<Person> {
-  const valid: Person[] = []
-  const invalid: BatchValidationResult<Person>['invalid'] = []
-
-  data.forEach((item, index) => {
-    const result = PersonSchema.safeParse(item)
-    if (result.success) {
-      valid.push(result.data)
-    } else {
-      invalid.push({ index, data: item, errors: result.error })
-    }
-  })
-
-  return { valid, invalid }
-}
+export const validatePersonBatch = createBatchValidator(PersonSchema)
 
 /**
  * Validates an array of BankAccount entities in batch.
@@ -246,21 +294,7 @@ export function validatePersonBatch(data: unknown[]): BatchValidationResult<Pers
  * logValidationErrors(result.invalid)
  * ```
  */
-export function validateBankAccountBatch(data: unknown[]): BatchValidationResult<BankAccount> {
-  const valid: BankAccount[] = []
-  const invalid: BatchValidationResult<BankAccount>['invalid'] = []
-
-  data.forEach((item, index) => {
-    const result = BankAccountSchema.safeParse(item)
-    if (result.success) {
-      valid.push(result.data)
-    } else {
-      invalid.push({ index, data: item, errors: result.error })
-    }
-  })
-
-  return { valid, invalid }
-}
+export const validateBankAccountBatch = createBatchValidator(BankAccountSchema)
 
 /**
  * Validates an array of Bank entities in batch.
@@ -270,21 +304,7 @@ export function validateBankAccountBatch(data: unknown[]): BatchValidationResult
  * @param data - Array of unknown data to validate as Bank entities
  * @returns BatchValidationResult with valid Bank[] and invalid entries
  */
-export function validateBankBatch(data: unknown[]): BatchValidationResult<Bank> {
-  const valid: Bank[] = []
-  const invalid: BatchValidationResult<Bank>['invalid'] = []
-
-  data.forEach((item, index) => {
-    const result = BankSchema.safeParse(item)
-    if (result.success) {
-      valid.push(result.data)
-    } else {
-      invalid.push({ index, data: item, errors: result.error })
-    }
-  })
-
-  return { valid, invalid }
-}
+export const validateBankBatch = createBatchValidator(BankSchema)
 
 /**
  * Validates an array of Company entities in batch.
@@ -295,21 +315,7 @@ export function validateBankBatch(data: unknown[]): BatchValidationResult<Bank> 
  * @param data - Array of unknown data to validate as Company entities
  * @returns BatchValidationResult with valid Company[] and invalid entries
  */
-export function validateCompanyBatch(data: unknown[]): BatchValidationResult<Company> {
-  const valid: Company[] = []
-  const invalid: BatchValidationResult<Company>['invalid'] = []
-
-  data.forEach((item, index) => {
-    const result = CompanySchema.safeParse(item)
-    if (result.success) {
-      valid.push(result.data)
-    } else {
-      invalid.push({ index, data: item, errors: result.error })
-    }
-  })
-
-  return { valid, invalid }
-}
+export const validateCompanyBatch = createBatchValidator(CompanySchema)
 
 /**
  * Validates an array of Transaction entities in batch.
@@ -331,18 +337,4 @@ export function validateCompanyBatch(data: unknown[]): BatchValidationResult<Com
  * }
  * ```
  */
-export function validateTransactionBatch(data: unknown[]): BatchValidationResult<Transaction> {
-  const valid: Transaction[] = []
-  const invalid: BatchValidationResult<Transaction>['invalid'] = []
-
-  data.forEach((item, index) => {
-    const result = TransactionSchema.safeParse(item)
-    if (result.success) {
-      valid.push(result.data)
-    } else {
-      invalid.push({ index, data: item, errors: result.error })
-    }
-  })
-
-  return { valid, invalid }
-}
+export const validateTransactionBatch = createBatchValidator(TransactionSchema)
