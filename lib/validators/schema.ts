@@ -173,3 +173,176 @@ export type Company = z.infer<typeof CompanySchema>
  * Represents a validated Transaction entity.
  */
 export type Transaction = z.infer<typeof TransactionSchema>
+
+/**
+ * Result type for batch validation operations.
+ * Separates valid entities from invalid ones with detailed error information.
+ *
+ * @template T - The validated entity type
+ */
+export interface BatchValidationResult<T> {
+  /** Array of successfully validated entities */
+  valid: T[]
+  /** Array of validation failures with original data and error details */
+  invalid: Array<{
+    /** Index of the item in the original array */
+    index: number
+    /** Original data that failed validation */
+    data: unknown
+    /** Zod validation errors */
+    errors: z.ZodError
+  }>
+}
+
+/**
+ * Validates an array of Person entities in batch.
+ *
+ * Useful for bulk data uploads (CSV/XLSX) where you need to process
+ * multiple records and separate valid from invalid entries.
+ *
+ * @param data - Array of unknown data to validate as Person entities
+ * @returns BatchValidationResult with valid Person[] and invalid entries with errors
+ *
+ * @example
+ * ```ts
+ * const result = validatePersonBatch(csvData)
+ * console.log(`Valid: ${result.valid.length}, Invalid: ${result.invalid.length}`)
+ * result.invalid.forEach(({ index, errors }) => {
+ *   console.log(`Row ${index + 1}: ${errors.message}`)
+ * })
+ * ```
+ */
+export function validatePersonBatch(data: unknown[]): BatchValidationResult<Person> {
+  const valid: Person[] = []
+  const invalid: BatchValidationResult<Person>['invalid'] = []
+
+  data.forEach((item, index) => {
+    const result = PersonSchema.safeParse(item)
+    if (result.success) {
+      valid.push(result.data)
+    } else {
+      invalid.push({ index, data: item, errors: result.error })
+    }
+  })
+
+  return { valid, invalid }
+}
+
+/**
+ * Validates an array of BankAccount entities in batch.
+ *
+ * Performs IBAN validation and account type checking for multiple
+ * bank account records simultaneously.
+ *
+ * @param data - Array of unknown data to validate as BankAccount entities
+ * @returns BatchValidationResult with valid BankAccount[] and invalid entries
+ *
+ * @example
+ * ```ts
+ * const result = validateBankAccountBatch(xlsxData)
+ * // Import only valid accounts
+ * await importAccounts(result.valid)
+ * // Log errors for manual review
+ * logValidationErrors(result.invalid)
+ * ```
+ */
+export function validateBankAccountBatch(data: unknown[]): BatchValidationResult<BankAccount> {
+  const valid: BankAccount[] = []
+  const invalid: BatchValidationResult<BankAccount>['invalid'] = []
+
+  data.forEach((item, index) => {
+    const result = BankAccountSchema.safeParse(item)
+    if (result.success) {
+      valid.push(result.data)
+    } else {
+      invalid.push({ index, data: item, errors: result.error })
+    }
+  })
+
+  return { valid, invalid }
+}
+
+/**
+ * Validates an array of Bank entities in batch.
+ *
+ * Validates financial institution data for bulk imports.
+ *
+ * @param data - Array of unknown data to validate as Bank entities
+ * @returns BatchValidationResult with valid Bank[] and invalid entries
+ */
+export function validateBankBatch(data: unknown[]): BatchValidationResult<Bank> {
+  const valid: Bank[] = []
+  const invalid: BatchValidationResult<Bank>['invalid'] = []
+
+  data.forEach((item, index) => {
+    const result = BankSchema.safeParse(item)
+    if (result.success) {
+      valid.push(result.data)
+    } else {
+      invalid.push({ index, data: item, errors: result.error })
+    }
+  })
+
+  return { valid, invalid }
+}
+
+/**
+ * Validates an array of Company entities in batch.
+ *
+ * Checks corporate entity data including shell company flags
+ * and registration details for multiple companies at once.
+ *
+ * @param data - Array of unknown data to validate as Company entities
+ * @returns BatchValidationResult with valid Company[] and invalid entries
+ */
+export function validateCompanyBatch(data: unknown[]): BatchValidationResult<Company> {
+  const valid: Company[] = []
+  const invalid: BatchValidationResult<Company>['invalid'] = []
+
+  data.forEach((item, index) => {
+    const result = CompanySchema.safeParse(item)
+    if (result.success) {
+      valid.push(result.data)
+    } else {
+      invalid.push({ index, data: item, errors: result.error })
+    }
+  })
+
+  return { valid, invalid }
+}
+
+/**
+ * Validates an array of Transaction entities in batch.
+ *
+ * Validates financial transactions including IBAN format,
+ * positive amounts, and transaction types for bulk processing.
+ *
+ * @param data - Array of unknown data to validate as Transaction entities
+ * @returns BatchValidationResult with valid Transaction[] and invalid entries
+ *
+ * @example
+ * ```ts
+ * const result = validateTransactionBatch(transactionData)
+ * // Process valid transactions
+ * await processTransactions(result.valid)
+ * // Flag invalid transactions for review
+ * if (result.invalid.length > 0) {
+ *   await flagForReview(result.invalid)
+ * }
+ * ```
+ */
+export function validateTransactionBatch(data: unknown[]): BatchValidationResult<Transaction> {
+  const valid: Transaction[] = []
+  const invalid: BatchValidationResult<Transaction>['invalid'] = []
+
+  data.forEach((item, index) => {
+    const result = TransactionSchema.safeParse(item)
+    if (result.success) {
+      valid.push(result.data)
+    } else {
+      invalid.push({ index, data: item, errors: result.error })
+    }
+  })
+
+  return { valid, invalid }
+}
