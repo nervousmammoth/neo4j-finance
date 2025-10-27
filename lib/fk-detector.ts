@@ -34,7 +34,11 @@ export interface ForeignKey {
  * Custom pattern definition for FK detection
  */
 export interface CustomPattern {
-  /** Regex pattern to match column names */
+  /**
+   * Regex pattern to match column names.
+   * IMPORTANT: Must not include 'g' (global) or 'y' (sticky) flags.
+   * These stateful flags will be automatically removed to prevent matching issues.
+   */
   pattern: RegExp
   /** Confidence score to assign when this pattern matches */
   confidence: number
@@ -207,25 +211,19 @@ const DEFAULT_PATTERNS: PatternRule[] = [
   },
 
   // Generic *_id patterns - snake_case (HIGH confidence)
+  // Note: extractEntity will be added during pattern compilation
   {
     pattern: /^(\w+)_id$/i,
     confidence: CONFIDENCE.HIGH,
     patternType: 'suffix_id',
-    extractEntity: (columnName: string) => {
-      const match = columnName.match(/^(\w+)_id$/i)!
-      return snakeCaseToPascalCase(match[1])
-    },
   },
 
   // Generic *Id patterns - camelCase (MEDIUM confidence)
+  // Note: extractEntity will be added during pattern compilation
   {
     pattern: /^(\w+)Id$/,
     confidence: CONFIDENCE.MEDIUM,
     patternType: 'suffix_id_camel',
-    extractEntity: (columnName: string) => {
-      const match = columnName.match(/^(\w+)Id$/)!
-      return capitalizeFirst(match[1])
-    },
   },
 
   // Reference patterns (LOW confidence)
@@ -263,49 +261,62 @@ export function detectForeignKeys(
 ): ForeignKey[] {
   const { customPatterns = [], minConfidence = 0.0, caseInsensitive = true } = options
 
-  // Combine built-in and custom patterns
-  const allPatterns: PatternRule[] = [
+  // Step 1: Combine built-in and custom patterns (with custom patterns sanitized)
+  const rawPatterns: PatternRule[] = [
     ...DEFAULT_PATTERNS,
-    ...customPatterns.map(cp => ({
-      pattern: cp.pattern,
-      confidence: cp.confidence,
-      targetEntity: cp.targetEntity,
-      patternType: 'custom' as const,
-      extractEntity: cp.extractEntity,
-    }))
-  ].map(rule => {
-    // Adjust regex flags based on caseInsensitive option
-    const hasIFlag = rule.pattern.flags.includes('i')
-    const needsAdjustment = (caseInsensitive && !hasIFlag) || (!caseInsensitive && hasIFlag)
+    ...customPatterns.map(cp => {
+      // Sanitize custom patterns: remove stateful 'g' and 'y' flags
+      const sanitizedFlags = cp.pattern.flags.replace(/[gy]/g, '')
+      const sanitizedPattern = new RegExp(cp.pattern.source, sanitizedFlags)
 
-    if (!needsAdjustment) {
-      return rule
+      return {
+        pattern: sanitizedPattern,
+        confidence: cp.confidence,
+        targetEntity: cp.targetEntity,
+        patternType: 'custom' as const,
+        extractEntity: cp.extractEntity,
+      }
+    })
+  ]
+
+  // Step 2: Compile patterns with proper flag handling for caseInsensitive option
+  const compiledPatterns = rawPatterns.map(rule => {
+    // Remove stateful flags first (belt and suspenders - custom patterns already sanitized)
+    const baseFlags = rule.pattern.flags.replace(/[gy]/g, '')
+
+    // Determine if pattern originally had 'i' flag (before any sanitization)
+    const originalHadI = rule.pattern.flags.includes('i')
+
+    // Decide if final pattern should have 'i' flag based on caseInsensitive option
+    // If caseInsensitive is true: add 'i' if pattern originally had it
+    // If caseInsensitive is false: remove 'i' completely
+    const shouldHaveI = originalHadI && caseInsensitive
+
+    // Build final flags: ensure 'i' is present/absent as needed without duplication
+    let finalFlags = baseFlags.replace(/i/g, '') // Remove all 'i' first
+    if (shouldHaveI) {
+      finalFlags += 'i' // Add single 'i' if needed
     }
 
-    // Create new pattern with adjusted flags
-    const newFlags = caseInsensitive
-      ? rule.pattern.flags + 'i'
-      : rule.pattern.flags.replace('i', '')
-    const newPattern = new RegExp(rule.pattern.source, newFlags)
+    // Always create new pattern to ensure consistency and proper flag handling
+    const newPattern = new RegExp(rule.pattern.source, finalFlags)
 
-    // If there's an extractEntity function, create a new one that uses the adjusted pattern
+    // Create or update extractEntity functions for built-in patterns
     let newExtractEntity = rule.extractEntity
 
-    if (rule.extractEntity) {
-      // Check if this is one of the built-in extractEntity functions that needs updating
-      const isSnakeCaseIdPattern = rule.pattern.source === '^(\\w+)_id$'
-      const isCamelCaseIdPattern = rule.pattern.source === '^(\\w+)Id$'
+    // Check if this matches one of the built-in patterns that need extractEntity
+    const isSnakeCaseIdPattern = rule.pattern.source === '^(\\w+)_id$'
+    const isCamelCaseIdPattern = rule.pattern.source === '^(\\w+)Id$'
 
-      if (isSnakeCaseIdPattern) {
-        newExtractEntity = (columnName: string) => {
-          const match = columnName.match(newPattern)!
-          return snakeCaseToPascalCase(match[1])
-        }
-      } else if (isCamelCaseIdPattern) {
-        newExtractEntity = (columnName: string) => {
-          const match = columnName.match(newPattern)!
-          return capitalizeFirst(match[1])
-        }
+    if (isSnakeCaseIdPattern) {
+      newExtractEntity = (columnName: string) => {
+        const match = columnName.match(newPattern)!
+        return snakeCaseToPascalCase(match[1])
+      }
+    } else if (isCamelCaseIdPattern) {
+      newExtractEntity = (columnName: string) => {
+        const match = columnName.match(newPattern)!
+        return capitalizeFirst(match[1])
       }
     }
 
@@ -332,7 +343,7 @@ export function detectForeignKeys(
     // Test patterns against trimmed header for better CSV compatibility
     const trimmedHeader = header.trim()
 
-    for (const rule of allPatterns) {
+    for (const rule of compiledPatterns) {
       if (rule.pattern.test(trimmedHeader)) {
         // Determine target entity
         let targetEntity = rule.targetEntity

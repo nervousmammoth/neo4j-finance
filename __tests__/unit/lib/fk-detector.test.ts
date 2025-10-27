@@ -370,4 +370,126 @@ describe('Foreign Key Detector', () => {
       expect(userProfileId!.targetEntity).toBe('UserProfile')
     })
   })
+
+  describe('Regex Flag Handling', () => {
+    it('should handle custom patterns with global flag correctly across multiple headers', () => {
+      // Custom pattern with 'g' flag (stateful) should still work on all headers
+      const headers = ['user_ref', 'name', 'product_ref', 'email', 'order_ref']
+      const options: FKDetectorOptions = {
+        customPatterns: [
+          {
+            pattern: /.*_ref/g,  // 'g' flag makes this stateful
+            confidence: 0.8,
+            targetEntity: 'Reference'
+          },
+        ],
+      }
+      const result = detectForeignKeys(headers, options)
+
+      // Should detect all three *_ref columns, not fail after first match
+      const refColumns = result.filter(fk => fk.columnName.endsWith('_ref'))
+      expect(refColumns).toHaveLength(3)
+      expect(refColumns.map(fk => fk.columnName)).toContain('user_ref')
+      expect(refColumns.map(fk => fk.columnName)).toContain('product_ref')
+      expect(refColumns.map(fk => fk.columnName)).toContain('order_ref')
+    })
+
+    it('should handle custom patterns with sticky flag correctly', () => {
+      // Custom pattern with 'y' flag (stateful) should be sanitized
+      const headers = ['account_num', 'balance', 'customer_num']
+      const options: FKDetectorOptions = {
+        customPatterns: [
+          {
+            pattern: /.*_num/y,  // 'y' sticky flag
+            confidence: 0.7,
+            targetEntity: 'Number'
+          },
+        ],
+      }
+      const result = detectForeignKeys(headers, options)
+
+      // Should detect both *_num columns
+      const numColumns = result.filter(fk => fk.columnName.endsWith('_num'))
+      expect(numColumns).toHaveLength(2)
+    })
+
+    it('should handle built-in patterns correctly across multiple matching headers', () => {
+      // Test that built-in patterns work consistently on multiple headers
+      // This verifies that g/y flags are removed during compilation
+      const headers = [
+        'person_id',
+        'name',
+        'bank_id',
+        'email',
+        'company_id',
+        'address',
+        'account_id'
+      ]
+      const result = detectForeignKeys(headers)
+
+      // Should detect all four *_id columns
+      const idColumns = result.filter(fk => fk.columnName.endsWith('_id'))
+      expect(idColumns).toHaveLength(4)
+      expect(idColumns.map(fk => fk.columnName)).toContain('person_id')
+      expect(idColumns.map(fk => fk.columnName)).toContain('bank_id')
+      expect(idColumns.map(fk => fk.columnName)).toContain('company_id')
+      expect(idColumns.map(fk => fk.columnName)).toContain('account_id')
+    })
+
+    it('should not have duplicate flags after adjustment', () => {
+      // Verify flag adjustment doesn't create invalid flag combinations
+      const headers = ['person_id', 'BANK_ID']
+      const result = detectForeignKeys(headers, { caseInsensitive: true })
+
+      // Both should be detected (verifying flags work correctly)
+      expect(result).toHaveLength(2)
+      expect(result.map(fk => fk.columnName)).toContain('person_id')
+      expect(result.map(fk => fk.columnName)).toContain('BANK_ID')
+    })
+
+    it('should correctly remove i flag when caseInsensitive is false', () => {
+      // Pattern that originally has 'i' should have it removed
+      const headers = ['person_id', 'PERSON_ID', 'bank_id', 'BANK_ID']
+      const result = detectForeignKeys(headers, { caseInsensitive: false })
+
+      // Should only match lowercase versions
+      expect(result.map(fk => fk.columnName)).toContain('person_id')
+      expect(result.map(fk => fk.columnName)).toContain('bank_id')
+      // Should not match uppercase versions with case-sensitive matching
+      expect(result.map(fk => fk.columnName)).not.toContain('PERSON_ID')
+      expect(result.map(fk => fk.columnName)).not.toContain('BANK_ID')
+    })
+
+    it('should sanitize stateful flags from pattern matching built-in camelCase source', () => {
+      // Custom pattern with EXACT source as built-in camelCase pattern '^(\\w+)Id$'
+      // but with 'g' flag that triggers sanitization and extractEntity recreation
+      const headers = ['userId', 'userName', 'productId', 'companyId']
+      const options: FKDetectorOptions = {
+        customPatterns: [
+          {
+            // Same source as built-in camelCase pattern, but with 'g' flag
+            pattern: new RegExp('^(\\w+)Id$', 'g'),
+            confidence: 0.88,
+            extractEntity: (columnName: string) => {
+              // This will be replaced by the built-in logic due to pattern source match
+              const match = columnName.match(/^(\w+)Id$/)
+              return match ? match[1].toUpperCase() : ''
+            }
+          },
+        ],
+      }
+      const result = detectForeignKeys(headers, options)
+
+      // Should detect all *Id columns
+      const idColumns = result.filter(fk => fk.columnName.endsWith('Id'))
+      expect(idColumns.length).toBeGreaterThanOrEqual(3)
+      expect(idColumns.map(fk => fk.columnName)).toContain('userId')
+      expect(idColumns.map(fk => fk.columnName)).toContain('productId')
+      expect(idColumns.map(fk => fk.columnName)).toContain('companyId')
+
+      // Verify entity extraction works after flag sanitization
+      const userId = idColumns.find(fk => fk.columnName === 'userId')
+      expect(userId?.targetEntity).toBeDefined()
+    })
+  })
 })
