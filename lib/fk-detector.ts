@@ -6,6 +6,17 @@
  */
 
 /**
+ * Type of pattern that matched during foreign key detection
+ */
+export type PatternType =
+  | 'domain_specific'
+  | 'iban'
+  | 'suffix_id'
+  | 'suffix_id_camel'
+  | 'reference'
+  | 'custom'
+
+/**
  * Represents a detected foreign key relationship
  */
 export interface ForeignKey {
@@ -16,7 +27,7 @@ export interface ForeignKey {
   /** Target entity this foreign key references (e.g., 'Person', 'Bank') */
   targetEntity?: string
   /** Type of pattern that matched (e.g., 'suffix_id', 'iban', 'domain_specific') */
-  patternType: string
+  patternType: PatternType
 }
 
 /**
@@ -29,6 +40,8 @@ export interface CustomPattern {
   confidence: number
   /** Target entity name for this pattern */
   targetEntity?: string
+  /** Optional function to derive entity name from the column name */
+  extractEntity?: (columnName: string) => string
 }
 
 /**
@@ -61,7 +74,7 @@ interface PatternRule {
   /** Target entity this foreign key references (optional) */
   targetEntity?: string
   /** Type/category of this pattern */
-  patternType: string
+  patternType: PatternType
   /** Function to extract entity name from column name (optional) */
   extractEntity?: (columnName: string) => string
 }
@@ -248,7 +261,7 @@ export function detectForeignKeys(
   headers: string[],
   options: FKDetectorOptions = {}
 ): ForeignKey[] {
-  const { customPatterns = [], minConfidence = 0.0 } = options
+  const { customPatterns = [], minConfidence = 0.0, caseInsensitive = true } = options
 
   // Combine built-in and custom patterns
   const allPatterns: PatternRule[] = [
@@ -258,8 +271,50 @@ export function detectForeignKeys(
       confidence: cp.confidence,
       targetEntity: cp.targetEntity,
       patternType: 'custom' as const,
+      extractEntity: cp.extractEntity,
     }))
-  ]
+  ].map(rule => {
+    // Adjust regex flags based on caseInsensitive option
+    const hasIFlag = rule.pattern.flags.includes('i')
+    const needsAdjustment = (caseInsensitive && !hasIFlag) || (!caseInsensitive && hasIFlag)
+
+    if (!needsAdjustment) {
+      return rule
+    }
+
+    // Create new pattern with adjusted flags
+    const newFlags = caseInsensitive
+      ? rule.pattern.flags + 'i'
+      : rule.pattern.flags.replace('i', '')
+    const newPattern = new RegExp(rule.pattern.source, newFlags)
+
+    // If there's an extractEntity function, create a new one that uses the adjusted pattern
+    let newExtractEntity = rule.extractEntity
+
+    if (rule.extractEntity) {
+      // Check if this is one of the built-in extractEntity functions that needs updating
+      const isSnakeCaseIdPattern = rule.pattern.source === '^(\\w+)_id$'
+      const isCamelCaseIdPattern = rule.pattern.source === '^(\\w+)Id$'
+
+      if (isSnakeCaseIdPattern) {
+        newExtractEntity = (columnName: string) => {
+          const match = columnName.match(newPattern)!
+          return snakeCaseToPascalCase(match[1])
+        }
+      } else if (isCamelCaseIdPattern) {
+        newExtractEntity = (columnName: string) => {
+          const match = columnName.match(newPattern)!
+          return capitalizeFirst(match[1])
+        }
+      }
+    }
+
+    return {
+      ...rule,
+      pattern: newPattern,
+      extractEntity: newExtractEntity
+    }
+  })
 
   const detectedKeys: ForeignKey[] = []
 
@@ -271,16 +326,19 @@ export function detectForeignKeys(
     const matches: Array<{
       confidence: number
       targetEntity?: string
-      patternType: string
+      patternType: PatternType
     }> = []
 
+    // Test patterns against trimmed header for better CSV compatibility
+    const trimmedHeader = header.trim()
+
     for (const rule of allPatterns) {
-      if (rule.pattern.test(header)) {
+      if (rule.pattern.test(trimmedHeader)) {
         // Determine target entity
         let targetEntity = rule.targetEntity
 
         if (rule.extractEntity) {
-          targetEntity = rule.extractEntity(header)
+          targetEntity = rule.extractEntity(trimmedHeader)
         }
 
         matches.push({
