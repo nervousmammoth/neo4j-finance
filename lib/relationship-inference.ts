@@ -3,9 +3,32 @@
  *
  * Infers semantic relationships between entities based on foreign key detection results.
  * Converts FK metadata into typed, directional relationships with confidence scoring.
+ *
+ * @example
+ * ```typescript
+ * // Step 1: Detect foreign keys
+ * const headers = ['transaction_id', 'from_iban', 'to_iban', 'amount']
+ * const foreignKeys = detectForeignKeys(headers)
+ *
+ * // Step 2: Infer relationships
+ * const relationships = inferRelationships(foreignKeys, 'Transaction')
+ * // Returns: [
+ * //   { type: 'FROM', sourceEntity: 'Transaction', targetEntity: 'Account', ... },
+ * //   { type: 'TO', sourceEntity: 'Transaction', targetEntity: 'Account', ... }
+ * // ]
+ *
+ * // Step 3: Generate Cypher
+ * const cypher = generateRelationshipCypher(relationships[0], 'txn123', 'acc456')
+ * ```
  */
 
 import { type ForeignKey } from './fk-detector'
+
+/**
+ * Confidence adjustment multiplier for generic relationship inference.
+ * Applied when no specific domain rule matches but a valid FK is detected.
+ */
+const GENERIC_CONFIDENCE_MULTIPLIER = 0.8
 
 /**
  * Supported relationship types in the banking domain
@@ -192,6 +215,16 @@ const BANKING_RULES: RelationshipRule[] = [
 /**
  * Normalizes entity names to standard Neo4j node labels.
  * Maps domain variations to canonical entity names.
+ *
+ * @param entity - The entity name to normalize
+ * @returns Normalized entity name
+ *
+ * @example
+ * ```typescript
+ * normalizeEntity('BankAccount') // Returns: 'Account'
+ * normalizeEntity('Manager')     // Returns: 'Person'
+ * normalizeEntity('Company')     // Returns: 'Company' (unchanged)
+ * ```
  */
 function normalizeEntity(entity: string): string {
   const normalized: Record<string, string> = {
@@ -199,6 +232,38 @@ function normalizeEntity(entity: string): string {
     Manager: 'Person',
   }
   return normalized[entity] || entity
+}
+
+/**
+ * Checks if a rule matches the given FK and context.
+ *
+ * @param rule - The relationship rule to test
+ * @param sourceEntity - The source entity context
+ * @param fk - The foreign key to match against
+ * @returns True if the rule matches
+ */
+function ruleMatches(
+  rule: RelationshipRule,
+  sourceEntity: string,
+  fk: ForeignKey
+): boolean {
+  const sourceMatches = rule.sourceEntity === sourceEntity
+  const targetMatches = rule.targetEntity === (fk.targetEntity || 'Unknown')
+  const columnMatches = rule.columnPattern.test(fk.columnName)
+
+  return sourceMatches && targetMatches && columnMatches
+}
+
+/**
+ * Checks if an entity should be skipped for generic inference.
+ * Entities like 'Reference', 'Unknown', etc. are too ambiguous.
+ *
+ * @param entity - The entity to check
+ * @returns True if the entity should be skipped
+ */
+function shouldSkipGenericInference(entity: string): boolean {
+  const ambiguousEntities = ['Reference', 'Unknown']
+  return ambiguousEntities.includes(entity)
 }
 
 /**
@@ -221,12 +286,7 @@ export function inferRelationships(
     let matched = false
 
     for (const rule of BANKING_RULES) {
-      // Check if source entity and target entity match the rule
-      const sourceMatches = rule.sourceEntity === sourceEntity
-      const targetMatches = rule.targetEntity === targetEntity
-      const columnMatches = rule.columnPattern.test(fk.columnName)
-
-      if (sourceMatches && targetMatches && columnMatches) {
+      if (ruleMatches(rule, sourceEntity, fk)) {
         // Determine actual source and target (handle inverted relationships)
         const actualSource = rule.actualSource || rule.sourceEntity
         const actualTarget = rule.actualTarget || normalizeEntity(rule.targetEntity)
@@ -251,14 +311,13 @@ export function inferRelationships(
       // This handles custom entity types not covered by specific rules
       const normalizedTarget = normalizeEntity(targetEntity)
 
-      // Skip generic inference for ambiguous cases
-      if (!['Reference', 'Unknown'].includes(normalizedTarget)) {
+      if (!shouldSkipGenericInference(normalizedTarget)) {
         relationships.push({
           type: 'OWNS',
           sourceEntity: sourceEntity,
           targetEntity: normalizedTarget,
           foreignKeyColumn: fk.columnName,
-          confidence: fk.confidence * 0.8, // Reduce confidence for generic inference
+          confidence: fk.confidence * GENERIC_CONFIDENCE_MULTIPLIER,
         })
       }
     }
