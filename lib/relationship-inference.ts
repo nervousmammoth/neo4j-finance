@@ -97,6 +97,7 @@ interface RelationshipRule {
  */
 const BANKING_RULES: RelationshipRule[] = [
   // IBAN-based relationships (Transaction context)
+  // Note: BankAccount is normalized to Account, so we only need one rule per pattern
   {
     sourceEntity: 'Transaction',
     targetEntity: 'BankAccount',
@@ -105,19 +106,7 @@ const BANKING_RULES: RelationshipRule[] = [
   },
   {
     sourceEntity: 'Transaction',
-    targetEntity: 'Account',
-    columnPattern: /^from_iban$/i,
-    relationshipType: 'FROM',
-  },
-  {
-    sourceEntity: 'Transaction',
     targetEntity: 'BankAccount',
-    columnPattern: /^to_iban$/i,
-    relationshipType: 'TO',
-  },
-  {
-    sourceEntity: 'Transaction',
-    targetEntity: 'Account',
     columnPattern: /^to_iban$/i,
     relationshipType: 'TO',
   },
@@ -179,12 +168,6 @@ const BANKING_RULES: RelationshipRule[] = [
     relationshipType: 'OWNS',
     actualTarget: 'Account',
   },
-  {
-    sourceEntity: 'Person',
-    targetEntity: 'Account',
-    columnPattern: /^account_id$/i,
-    relationshipType: 'OWNS',
-  },
 
   // CONTROLS relationship (Person → Company) - beneficial ownership
   {
@@ -203,12 +186,6 @@ const BANKING_RULES: RelationshipRule[] = [
     columnPattern: /^account_id$/i,
     relationshipType: 'FROM', // Default to FROM for generic account_id in Transaction
     actualTarget: 'Account',
-  },
-  {
-    sourceEntity: 'Transaction',
-    targetEntity: 'Account',
-    columnPattern: /^account_id$/i,
-    relationshipType: 'FROM',
   },
 ]
 
@@ -232,6 +209,26 @@ function normalizeEntity(entity: string): string {
     Manager: 'Person',
   }
   return normalized[entity] || entity
+}
+
+/**
+ * Validates a Neo4j label against naming rules.
+ * Neo4j labels must start with a letter or underscore, followed by letters, numbers, or underscores.
+ * This prevents Cypher injection via malicious label names.
+ *
+ * @param label - The label to validate
+ * @returns True if the label is valid
+ *
+ * @example
+ * ```typescript
+ * isValidNeo4jLabel('Account')        // Returns: true
+ * isValidNeo4jLabel('_Account_2025')  // Returns: true
+ * isValidNeo4jLabel('123Account')     // Returns: false (starts with number)
+ * isValidNeo4jLabel('Account; DROP')  // Returns: false (contains semicolon)
+ * ```
+ */
+function isValidNeo4jLabel(label: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(label)
 }
 
 /**
@@ -342,11 +339,27 @@ export function generateRelationshipCypher(
   targetId: string,
   options?: CypherOptions
 ): string {
-  const { useMerge = false, useParameters = false } = options || {}
+  // Validate entity labels to prevent Cypher injection
+  if (!isValidNeo4jLabel(relationship.sourceEntity)) {
+    throw new Error(
+      `Invalid source entity label: ${relationship.sourceEntity}. Labels must start with a letter or underscore and contain only alphanumeric characters and underscores.`
+    )
+  }
+  if (!isValidNeo4jLabel(relationship.targetEntity)) {
+    throw new Error(
+      `Invalid target entity label: ${relationship.targetEntity}. Labels must start with a letter or underscore and contain only alphanumeric characters and underscores.`
+    )
+  }
 
-  // Prepare IDs for query
-  const srcId = useParameters ? '$sourceId' : `'${sourceId}'`
-  const tgtId = useParameters ? '$targetId' : `'${targetId}'`
+  const { useMerge = false, useParameters = true } = options || {}
+
+  // Prepare IDs for query - escape single quotes for security when not using parameters
+  const srcId = useParameters
+    ? '$sourceId'
+    : `'${sourceId.replace(/'/g, "\\'")}'`
+  const tgtId = useParameters
+    ? '$targetId'
+    : `'${targetId.replace(/'/g, "\\'")}'`
 
   // Build properties object (always includes confidence)
   const props: string[] = [`confidence: ${relationship.confidence}`]
@@ -354,7 +367,9 @@ export function generateRelationshipCypher(
   if (relationship.properties) {
     for (const [key, value] of Object.entries(relationship.properties)) {
       if (typeof value === 'string') {
-        props.push(`${key}: '${value}'`)
+        // Escape single quotes to prevent injection when not using parameters
+        const escapedValue = value.replace(/'/g, "\\'")
+        props.push(`${key}: '${escapedValue}'`)
       } else if (typeof value === 'number') {
         props.push(`${key}: ${value}`)
       } else {
