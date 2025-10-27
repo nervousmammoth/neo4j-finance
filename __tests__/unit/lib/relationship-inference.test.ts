@@ -499,8 +499,9 @@ describe('Relationship Inference Engine', () => {
       expect(cypher).toContain('Person')
       expect(cypher).toContain('Account')
       expect(cypher).toContain('OWNS')
-      expect(cypher).toContain('person123')
-      expect(cypher).toContain('acc456')
+      // Default is now parameterized for security
+      expect(cypher).toContain('$sourceId')
+      expect(cypher).toContain('$targetId')
     })
 
     it('should generate MERGE statement for idempotent relationships', () => {
@@ -697,6 +698,176 @@ describe('Relationship Inference Engine', () => {
       const personResult = inferRelationships(foreignKeys, 'Person')
       expect(personResult[0].sourceEntity).toBe('Person')
       expect(personResult[0].targetEntity).toBe('Account')
+    })
+  })
+
+  describe('Security: Cypher Injection Prevention', () => {
+    it('should prevent Cypher injection via malicious sourceId', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      const maliciousId = "p1'; DROP ALL; MATCH (n"
+      const cypher = generateRelationshipCypher(
+        relationship,
+        maliciousId,
+        'acc123',
+        { useParameters: false }
+      )
+
+      // Should escape single quotes to prevent injection
+      expect(cypher).toContain("p1\\'")
+      expect(cypher).toContain("DROP ALL")
+      // Verify the escaped quote makes it safe (no unescaped '; sequence)
+      expect(cypher).not.toMatch(/[^\\]'; DROP/)
+    })
+
+    it('should prevent Cypher injection via malicious targetId', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      const maliciousId = "acc1'; CREATE (x:Hacker); MATCH (y"
+      const cypher = generateRelationshipCypher(
+        relationship,
+        'p123',
+        maliciousId,
+        { useParameters: false }
+      )
+
+      // Should escape single quotes
+      expect(cypher).toContain("acc1\\'")
+      expect(cypher).toContain("CREATE")
+      // Verify the escaped quote makes it safe
+      expect(cypher).not.toMatch(/[^\\]'; CREATE/)
+    })
+
+    it('should prevent Cypher injection via malicious property values', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Company',
+        foreignKeyColumn: 'company_id',
+        confidence: 0.95,
+        properties: {
+          note: "x'; DROP ALL; MATCH (n)='",
+        },
+      }
+
+      const cypher = generateRelationshipCypher(
+        relationship,
+        'p1',
+        'c1',
+        { useParameters: false }
+      )
+
+      // Should escape properties to prevent injection
+      expect(cypher).toContain("x\\'")
+      expect(cypher).toContain("DROP ALL")
+      // Verify the escaped quote makes it safe
+      expect(cypher).not.toMatch(/[^\\]'; DROP/)
+    })
+
+    it('should reject invalid Neo4j labels in sourceEntity', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person; DROP ALL',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'p1', 'a1')
+      }).toThrow(/invalid.*label/i)
+    })
+
+    it('should reject invalid Neo4j labels in targetEntity', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account; CREATE (x:Hacker)',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'p1', 'a1')
+      }).toThrow(/invalid.*label/i)
+    })
+
+    it('should accept valid Neo4j labels', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'BankAccount_2025',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'p1', 'a1')
+      }).not.toThrow()
+    })
+
+    it('should reject labels starting with numbers', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: '123Account',
+        targetEntity: 'Person',
+        foreignKeyColumn: 'account_id',
+        confidence: 0.95,
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'a1', 'p1')
+      }).toThrow(/invalid.*label/i)
+    })
+
+    it('should default to parameterized queries for security', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      // Call without options - should default to parameterized
+      const cypher = generateRelationshipCypher(relationship, 'p123', 'a456')
+
+      expect(cypher).toContain('$sourceId')
+      expect(cypher).toContain('$targetId')
+      expect(cypher).not.toContain("'p123'")
+      expect(cypher).not.toContain("'a456'")
+    })
+
+    it('should use parameterized queries when explicitly enabled', () => {
+      const relationship: InferredRelationship = {
+        type: 'FROM',
+        sourceEntity: 'Transaction',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'from_iban',
+        confidence: 0.90,
+      }
+
+      const cypher = generateRelationshipCypher(relationship, 'txn1', 'acc1', {
+        useParameters: true,
+      })
+
+      expect(cypher).toContain('$sourceId')
+      expect(cypher).toContain('$targetId')
+      // Should not contain raw IDs
+      expect(cypher).not.toContain("'txn1'")
+      expect(cypher).not.toContain("'acc1'")
     })
   })
 
