@@ -79,12 +79,13 @@ This is a **Neo4j Finance Frontend** - an internal tool for uploading banking da
 - ⚠️ **Default to parameterized queries** - Security must be the default, not opt-in
 - ✅ Use `$parameters` instead of string interpolation: `{id: $sourceId}` not `{id: '${sourceId}'}`
 - ✅ Validate Neo4j labels before query generation: `/^[A-Za-z_][A-Za-z0-9_]*$/`
-- ✅ Escape single quotes when parameterization unavailable: `.replace(/'/g, "\\'")`
+- ✅ Escape backslashes and single quotes when parameterization unavailable: `.replace(/\\/g, "\\\\").replace(/'/g, "\\'")`
 - ✅ Never directly interpolate user input into Cypher queries
 - ❌ Flag any code with `useParameters: false` or similar opt-out patterns
 
 **Security Test Requirements:**
-- Test injection attack vectors (e.g., `"id'; DROP ALL; MATCH (n"`)
+- Test injection attack vectors (e.g., `"x'} MATCH (n) DETACH DELETE n; //"`)
+- Test backslash-quote bypass attacks (e.g., `"test\\'"` should not break escaping)
 - Test label validation with malicious inputs (e.g., `"Account; CREATE (x:Hacker)"`)
 - Test property value sanitization
 - Verify secure defaults are enabled
