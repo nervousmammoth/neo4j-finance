@@ -366,6 +366,13 @@ export function generateRelationshipCypher(
 
   if (relationship.properties) {
     for (const [key, value] of Object.entries(relationship.properties)) {
+      // Validate property keys to prevent Cypher injection
+      if (!isValidNeo4jLabel(key)) {
+        throw new Error(
+          `Invalid property key: ${key}. Property keys must start with a letter or underscore and contain only alphanumeric characters and underscores.`
+        )
+      }
+
       if (typeof value === 'string') {
         // Escape backslashes then quotes to prevent injection when not using parameters
         const escapedValue = value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
