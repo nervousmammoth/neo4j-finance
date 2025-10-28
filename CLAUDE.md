@@ -66,21 +66,74 @@ This is a **Neo4j Finance Frontend** - an internal tool for uploading banking da
 - Large functions (> 50 lines suggests need for refactoring)
 - Commented-out code
 
-### 5. Neo4j Best Practices
+### 5. Neo4j Best Practices & Security
 
+**Query Execution:**
 - Use `session.executeWrite()` for write operations
 - Use `session.executeRead()` for read operations
 - Always close sessions properly (use `try/finally`)
 - Implement retry logic for transient failures
-- Use parameterized queries (prevent injection)
 - Proper connection pooling management
+
+**Cypher Injection Prevention (CRITICAL):**
+- ⚠️ **Default to parameterized queries** - Security must be the default, not opt-in
+- ✅ Use `$parameters` instead of string interpolation: `{id: $sourceId}` not `{id: '${sourceId}'}`
+- ✅ Validate Neo4j labels before query generation: `/^[A-Za-z_][A-Za-z0-9_]*$/`
+- ✅ Escape single quotes when parameterization unavailable: `.replace(/'/g, "\\'")`
+- ✅ Never directly interpolate user input into Cypher queries
+- ❌ Flag any code with `useParameters: false` or similar opt-out patterns
+
+**Security Test Requirements:**
+- Test injection attack vectors (e.g., `"id'; DROP ALL; MATCH (n"`)
+- Test label validation with malicious inputs (e.g., `"Account; CREATE (x:Hacker)"`)
+- Test property value sanitization
+- Verify secure defaults are enabled
+
+**Examples of Secure vs. Insecure Patterns:**
+
+```typescript
+// ❌ INSECURE - Direct string interpolation
+const query = `MATCH (n:${entityType} {id: '${userId}'}) RETURN n`
+
+// ❌ INSECURE - Unvalidated labels
+const query = `MATCH (n:${userInput}) RETURN n`
+
+// ❌ INSECURE - Optional security (opt-in)
+function generateQuery(id, options?: { useParameters?: boolean })
+
+// ✅ SECURE - Parameterized with validated labels
+if (!isValidNeo4jLabel(entityType)) throw new Error('Invalid label')
+const query = `MATCH (n:${entityType} {id: $userId}) RETURN n`
+const params = { userId }
+
+// ✅ SECURE - Required security (opt-out)
+function generateQuery(id, options?: { useParameters?: true })
+```
 
 ### 6. Security
 
+**General Security:**
 - No hardcoded credentials or API keys
 - Environment variables for all secrets
 - Proper input validation and sanitization
 - No SQL/Cypher injection vulnerabilities
+
+**Cypher-Specific Security Checks:**
+- 🔴 Flag direct string interpolation in queries: `MATCH (n {id: '${userId}'})`
+- 🔴 Flag unvalidated entity labels: `MATCH (n:${entityType})`
+- 🔴 Flag insecure defaults: `useParameters = false` or `useParameters?: boolean`
+- 🔴 Flag unescaped property values: `{name: '${userInput}'}`
+- ✅ Require parameterized queries: `MATCH (n {id: $userId})`
+- ✅ Require label validation: `if (!isValidNeo4jLabel(label)) throw Error()`
+- ✅ Require secure-by-default function signatures
+- ✅ Require security-focused tests for all query generation code
+
+**Security Test Coverage Requirements:**
+Every function that generates Cypher queries MUST have tests for:
+- Injection via malicious IDs with special characters (`'; DROP ALL;`)
+- Injection via property values with quote escaping
+- Invalid Neo4j labels (starting with numbers, containing special chars)
+- Default behavior uses secure options (parameterization enabled)
 
 ---
 
@@ -167,7 +220,11 @@ All PRs have already passed local checks:
 - Missing tests for new functionality
 - Coverage below 100% for business logic
 - TypeScript errors
-- Security vulnerabilities
+- Security vulnerabilities (especially Cypher injection)
+- Direct string interpolation in Cypher queries
+- Unvalidated Neo4j labels before query generation
+- Insecure defaults (e.g., `useParameters = false`)
+- Missing security tests for query generation code
 - Breaking changes without migration path
 
 🟡 **Important - Suggest Changes:**
@@ -249,5 +306,5 @@ Otherwise, request changes with specific, actionable feedback.
 
 ---
 
-**Last Updated:** 2025-10-26
-**Review Standard:** Strict TDD with 100% coverage enforcement
+**Last Updated:** 2025-10-27
+**Review Standard:** Strict TDD with 100% coverage enforcement + Cypher injection prevention
