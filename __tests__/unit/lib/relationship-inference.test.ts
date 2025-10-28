@@ -798,9 +798,35 @@ describe('Relationship Inference Engine', () => {
       // Input: test\' → Should become: test\\\' (backslash escaped, then quote escaped)
       expect(cypher).toContain("test\\\\\\'")
       // Verify the entire malicious ID is properly contained as a string
-      expect(cypher).toContain("{id: 'test\\\\\\''}"),
+      expect(cypher).toContain("{id: 'test\\\\\\''}")
       // And the second ID is also properly quoted
       expect(cypher).toContain("{id: 'acc123'}")
+    })
+
+    it('should prevent backslash-quote bypass attack in targetId', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      // Attack: backslash followed by quote attempts to escape our escaping
+      const maliciousId = "test\\'"
+      const cypher = generateRelationshipCypher(
+        relationship,
+        'p123',
+        maliciousId,
+        { useParameters: false }
+      )
+
+      // Should escape backslashes BEFORE quotes
+      expect(cypher).toContain("test\\\\\\'")
+      // Verify the entire malicious ID is properly contained as a string
+      expect(cypher).toContain("{id: 'test\\\\\\''}")
+      // And the source ID is also properly quoted
+      expect(cypher).toContain("{id: 'p123'}")
     })
 
     it('should prevent backslash-quote bypass attack in property values', () => {
@@ -853,6 +879,76 @@ describe('Relationship Inference Engine', () => {
       expect(cypher).toContain("} MATCH (n) DETACH DELETE n; //")
       // Verify it's treated as string data, not executed code
       expect(cypher).toContain("description: 'x\\'} MATCH (n) DETACH DELETE n; //'")
+    })
+
+    it('should reject invalid property keys with injection attempts', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+        properties: {
+          "x': 1}); DROP": "value",
+        },
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'p1', 'a1')
+      }).toThrow(/invalid.*property key/i)
+    })
+
+    it('should reject property keys starting with numbers', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+        properties: {
+          "123key": "value",
+        },
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'p1', 'a1')
+      }).toThrow(/invalid.*property key/i)
+    })
+
+    it('should reject property keys with special characters', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+        properties: {
+          "key-with-dash": "value",
+        },
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'p1', 'a1')
+      }).toThrow(/invalid.*property key/i)
+    })
+
+    it('should accept valid property keys', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+        properties: {
+          valid_key: "value",
+          _privateKey: "value",
+          key123: "value",
+        },
+      }
+
+      expect(() => {
+        generateRelationshipCypher(relationship, 'p1', 'a1')
+      }).not.toThrow()
     })
 
     it('should reject invalid Neo4j labels in sourceEntity', () => {
