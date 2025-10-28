@@ -353,13 +353,13 @@ export function generateRelationshipCypher(
 
   const { useMerge = false, useParameters = true } = options || {}
 
-  // Prepare IDs for query - escape single quotes for security when not using parameters
+  // Prepare IDs for query - escape backslashes then quotes for security when not using parameters
   const srcId = useParameters
     ? '$sourceId'
-    : `'${sourceId.replace(/'/g, "\\'")}'`
+    : `'${sourceId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
   const tgtId = useParameters
     ? '$targetId'
-    : `'${targetId.replace(/'/g, "\\'")}'`
+    : `'${targetId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
 
   // Build properties object (always includes confidence)
   const props: string[] = [`confidence: ${relationship.confidence}`]
@@ -367,8 +367,8 @@ export function generateRelationshipCypher(
   if (relationship.properties) {
     for (const [key, value] of Object.entries(relationship.properties)) {
       if (typeof value === 'string') {
-        // Escape single quotes to prevent injection when not using parameters
-        const escapedValue = value.replace(/'/g, "\\'")
+        // Escape backslashes then quotes to prevent injection when not using parameters
+        const escapedValue = value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
         props.push(`${key}: '${escapedValue}'`)
       } else if (typeof value === 'number') {
         props.push(`${key}: ${value}`)

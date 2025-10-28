@@ -711,7 +711,7 @@ describe('Relationship Inference Engine', () => {
         confidence: 0.95,
       }
 
-      const maliciousId = "p1'; DROP ALL; MATCH (n"
+      const maliciousId = "p1'} MATCH (n) DETACH DELETE n; //"
       const cypher = generateRelationshipCypher(
         relationship,
         maliciousId,
@@ -721,9 +721,9 @@ describe('Relationship Inference Engine', () => {
 
       // Should escape single quotes to prevent injection
       expect(cypher).toContain("p1\\'")
-      expect(cypher).toContain("DROP ALL")
-      // Verify the escaped quote makes it safe (no unescaped '; sequence)
-      expect(cypher).not.toMatch(/[^\\]'; DROP/)
+      expect(cypher).toContain("DETACH DELETE")
+      // Verify the quote is escaped (the malicious payload is treated as string data)
+      expect(cypher).toContain("'p1\\'} MATCH (n) DETACH DELETE n; //'")
     })
 
     it('should prevent Cypher injection via malicious targetId', () => {
@@ -735,7 +735,7 @@ describe('Relationship Inference Engine', () => {
         confidence: 0.95,
       }
 
-      const maliciousId = "acc1'; CREATE (x:Hacker); MATCH (y"
+      const maliciousId = "acc1'} CREATE (x:Hacker) //"
       const cypher = generateRelationshipCypher(
         relationship,
         'p123',
@@ -746,8 +746,8 @@ describe('Relationship Inference Engine', () => {
       // Should escape single quotes
       expect(cypher).toContain("acc1\\'")
       expect(cypher).toContain("CREATE")
-      // Verify the escaped quote makes it safe
-      expect(cypher).not.toMatch(/[^\\]'; CREATE/)
+      // Verify the quote is escaped (the malicious payload is treated as string data)
+      expect(cypher).toContain("'acc1\\'} CREATE (x:Hacker) //'")
     })
 
     it('should prevent Cypher injection via malicious property values', () => {
@@ -758,7 +758,7 @@ describe('Relationship Inference Engine', () => {
         foreignKeyColumn: 'company_id',
         confidence: 0.95,
         properties: {
-          note: "x'; DROP ALL; MATCH (n)='",
+          note: "x'} MATCH (n) DETACH DELETE n; //",
         },
       }
 
@@ -771,9 +771,88 @@ describe('Relationship Inference Engine', () => {
 
       // Should escape properties to prevent injection
       expect(cypher).toContain("x\\'")
-      expect(cypher).toContain("DROP ALL")
-      // Verify the escaped quote makes it safe
-      expect(cypher).not.toMatch(/[^\\]'; DROP/)
+      expect(cypher).toContain("DETACH DELETE")
+      // Verify the quote is escaped (the malicious payload is treated as string data)
+      expect(cypher).toContain("note: 'x\\'} MATCH (n) DETACH DELETE n; //'")
+    })
+
+    it('should prevent backslash-quote bypass attack in sourceId', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+      }
+
+      // Attack: backslash followed by quote attempts to escape our escaping
+      const maliciousId = "test\\'"
+      const cypher = generateRelationshipCypher(
+        relationship,
+        maliciousId,
+        'acc123',
+        { useParameters: false }
+      )
+
+      // Should escape backslashes BEFORE quotes
+      // Input: test\' → Should become: test\\\' (backslash escaped, then quote escaped)
+      expect(cypher).toContain("test\\\\\\'")
+      // Verify the entire malicious ID is properly contained as a string
+      expect(cypher).toContain("{id: 'test\\\\\\''}"),
+      // And the second ID is also properly quoted
+      expect(cypher).toContain("{id: 'acc123'}")
+    })
+
+    it('should prevent backslash-quote bypass attack in property values', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Company',
+        foreignKeyColumn: 'company_id',
+        confidence: 0.95,
+        properties: {
+          note: "test\\' } MATCH (n) DETACH DELETE n; //",
+        },
+      }
+
+      const cypher = generateRelationshipCypher(
+        relationship,
+        'p1',
+        'c1',
+        { useParameters: false }
+      )
+
+      // Should escape both backslashes and quotes
+      expect(cypher).toContain("test\\\\\\'")
+      expect(cypher).toContain("DETACH DELETE")
+      // Verify the attack is neutralized (entire string is escaped and contained)
+      expect(cypher).toContain("note: 'test\\\\\\' } MATCH (n) DETACH DELETE n; //'")
+    })
+
+    it('should handle realistic Cypher injection payloads', () => {
+      const relationship: InferredRelationship = {
+        type: 'OWNS',
+        sourceEntity: 'Person',
+        targetEntity: 'Account',
+        foreignKeyColumn: 'person_id',
+        confidence: 0.95,
+        properties: {
+          description: "x'} MATCH (n) DETACH DELETE n; //",
+        },
+      }
+
+      const cypher = generateRelationshipCypher(
+        relationship,
+        'p1',
+        'a1',
+        { useParameters: false }
+      )
+
+      // Should escape the quote, preventing the payload from breaking out
+      expect(cypher).toContain("x\\'")
+      expect(cypher).toContain("} MATCH (n) DETACH DELETE n; //")
+      // Verify it's treated as string data, not executed code
+      expect(cypher).toContain("description: 'x\\'} MATCH (n) DETACH DELETE n; //'")
     })
 
     it('should reject invalid Neo4j labels in sourceEntity', () => {
