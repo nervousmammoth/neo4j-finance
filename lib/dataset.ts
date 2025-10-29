@@ -2,6 +2,15 @@ import { v4 as uuidv4 } from 'uuid'
 import { getDriver } from './neo4j'
 
 /**
+ * Regular expression pattern for validating dataset ID format
+ * Format: {slug}-{timestamp}-{uuid8}
+ * - slug: lowercase alphanumeric with hyphens (one or more characters)
+ * - timestamp: exactly 13 digits (milliseconds since epoch)
+ * - uuid8: exactly 8 hexadecimal characters (lowercase)
+ */
+export const DATASET_ID_PATTERN = /^[a-z0-9-]+-\d{13}-[a-f0-9]{8}$/
+
+/**
  * Converts a string to a URL-friendly slug format
  * @param text - The text to slugify
  * @returns A lowercase slug with hyphens
@@ -47,8 +56,7 @@ export function generateDatasetId(name?: string): string {
  * validateDatasetId('Invalid-ID') // => false
  */
 export function validateDatasetId(id: string): boolean {
-  const pattern = /^[a-z0-9-]+-\d{13}-[a-f0-9]{8}$/
-  return pattern.test(id)
+  return DATASET_ID_PATTERN.test(id)
 }
 
 /**
