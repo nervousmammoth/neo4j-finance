@@ -3,7 +3,11 @@
  * Generates CREATE and MERGE Cypher queries for nodes with proper parameterization
  */
 
-import { isValidNeo4jLabel } from './validators'
+import {
+  filterUndefinedValues,
+  getUniqueIdentifierField,
+  validateNeo4jIdentifier,
+} from './utils'
 
 export interface GenerateNodeQueryOptions {
   merge?: boolean
@@ -13,31 +17,6 @@ export interface GenerateNodeQueryOptions {
 export interface GenerateNodeQueryResult {
   query: string
   params: Record<string, unknown>
-}
-
-/**
- * Mapping of entity types to their unique identifier field names
- */
-const UNIQUE_IDENTIFIERS: Record<string, string> = {
-  Person: 'person_id',
-  BankAccount: 'iban',
-  Bank: 'bank_id',
-  Company: 'company_id',
-  Transaction: 'transaction_id',
-}
-
-/**
- * Filters out undefined values from data object while preserving null values
- *
- * @param data - The input data object
- * @returns A new object with undefined values removed
- */
-function filterUndefinedValues(
-  data: Record<string, unknown>
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(data).filter(([, value]) => value !== undefined)
-  )
 }
 
 /**
@@ -86,13 +65,7 @@ function buildMergeQuery(
   entityType: string,
   props: Record<string, unknown>
 ): GenerateNodeQueryResult {
-  const uniqueIdField = UNIQUE_IDENTIFIERS[entityType]
-
-  if (!uniqueIdField) {
-    throw new Error(
-      `Unknown entity type: "${entityType}". Cannot determine unique identifier for MERGE operation.`
-    )
-  }
+  const uniqueIdField = getUniqueIdentifierField(entityType)
 
   if (!(uniqueIdField in props)) {
     throw new Error(
@@ -127,11 +100,7 @@ export function generateNodeQuery(
   options?: GenerateNodeQueryOptions
 ): GenerateNodeQueryResult {
   // Validate entity type to prevent Cypher injection
-  if (!entityType || !isValidNeo4jLabel(entityType)) {
-    throw new Error(
-      `Invalid Neo4j label: "${entityType}". Labels must start with a letter or underscore and contain only alphanumeric characters and underscores.`
-    )
-  }
+  validateNeo4jIdentifier(entityType, 'label')
 
   const { merge = false, datasetId } = options || {}
 
