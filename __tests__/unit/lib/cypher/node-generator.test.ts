@@ -438,5 +438,11 @@ describe('Node Cypher Query Generator', () => {
         generateNodeQuery('Person', { first_name: 'John' }, { merge: true })
       }).toThrow(/missing.*person_id/i)
     })
+
+    it('should throw error when MERGE requested for unknown entity type', () => {
+      expect(() => {
+        generateNodeQuery('UnknownEntity', { id: '123' }, { merge: true })
+      }).toThrow(/unknown entity type/i)
+    })
   })
 })
