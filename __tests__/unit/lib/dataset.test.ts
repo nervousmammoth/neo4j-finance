@@ -89,6 +89,11 @@ describe('dataset utilities', () => {
       expect(id).toMatch(/^dataset-\d{13}-[a-f0-9]{8}$/)
     })
 
+    it('should handle name with only special characters', () => {
+      const id = generateDatasetId('!!!@@@###')
+      expect(id).toMatch(/^dataset-\d{13}-[a-f0-9]{8}$/)
+    })
+
     it('should generate timestamp in milliseconds', () => {
       const beforeTimestamp = Date.now()
       const id = generateDatasetId('test')
@@ -276,6 +281,31 @@ describe('dataset utilities', () => {
       await expect(
         datasetExists('test-1234567890123-abcd1234')
       ).rejects.toThrow('Query failed')
+    })
+
+    it('should use default database when NEO4J_DATABASE not set', async () => {
+      const originalDb = process.env.NEO4J_DATABASE
+      delete process.env.NEO4J_DATABASE
+
+      mockSession.executeRead.mockImplementation(async (callback) => {
+        const mockTx = {
+          run: vi.fn().mockResolvedValue({
+            records: [{ get: () => true }],
+          }),
+        }
+        return callback(mockTx)
+      })
+
+      await datasetExists('test-1234567890123-abcd1234')
+
+      expect(mockDriver.session).toHaveBeenCalledWith({
+        database: 'neo4j',
+      })
+
+      // Restore original value
+      if (originalDb) {
+        process.env.NEO4J_DATABASE = originalDb
+      }
     })
   })
 })
