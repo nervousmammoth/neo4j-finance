@@ -85,6 +85,24 @@ describe('Relationship Cypher Query Generator', () => {
       expect(result.params.props).toHaveProperty('dataset_id', 'dataset_001')
       expect(result.params.props).toHaveProperty('since', '2020-01-15')
     })
+
+    it('should add dataset_id when no properties provided but datasetId set', () => {
+      const sourceNode = {
+        entityType: 'Person',
+        person_id: 'P123',
+      }
+      const targetNode = {
+        entityType: 'BankAccount',
+        iban: 'DE89370400440532013000',
+      }
+
+      const result = generateRelationshipQuery('OWNS', sourceNode, targetNode, {
+        datasetId: 'dataset_001',
+      })
+
+      expect(result.params.props).toEqual({ dataset_id: 'dataset_001' })
+      expect(result.query).toContain('SET r = $props')
+    })
   })
 
   describe('OWNS Relationship (Company -> Account)', () => {
@@ -329,6 +347,90 @@ describe('Relationship Cypher Query Generator', () => {
       expect(result.query).toContain('CREATE (from)-[r:OWNS]->(to)')
       expect(result.query).not.toContain('SET r')
       expect(result.query).toContain('RETURN r')
+    })
+
+    it('should handle properties with only undefined values', () => {
+      const sourceNode = {
+        entityType: 'Person',
+        person_id: 'P123',
+      }
+      const targetNode = {
+        entityType: 'BankAccount',
+        iban: 'DE89370400440532013000',
+      }
+
+      const result = generateRelationshipQuery('OWNS', sourceNode, targetNode, {
+        properties: {
+          field1: undefined,
+          field2: undefined,
+        },
+      })
+
+      // All properties are undefined, so no SET clause
+      expect(result.query).toContain('CREATE (from)-[r:OWNS]->(to)')
+      expect(result.query).not.toContain('SET r')
+      expect(result.params).not.toHaveProperty('props')
+    })
+
+    it('should handle properties without dataset ID', () => {
+      const sourceNode = {
+        entityType: 'Person',
+        person_id: 'P123',
+      }
+      const targetNode = {
+        entityType: 'BankAccount',
+        iban: 'DE89370400440532013000',
+      }
+
+      const result = generateRelationshipQuery('OWNS', sourceNode, targetNode, {
+        properties: {
+          since: '2020-01-01',
+        },
+      })
+
+      expect(result.params.props).toEqual({ since: '2020-01-01' })
+      expect(result.params.props).not.toHaveProperty('dataset_id')
+    })
+
+    it('should handle MERGE with properties', () => {
+      const sourceNode = {
+        entityType: 'Person',
+        person_id: 'P123',
+      }
+      const targetNode = {
+        entityType: 'BankAccount',
+        iban: 'DE89370400440532013000',
+      }
+
+      const result = generateRelationshipQuery('OWNS', sourceNode, targetNode, {
+        merge: true,
+        properties: {
+          since: '2020-01-01',
+        },
+      })
+
+      expect(result.query).toContain('MERGE (from)-[r:OWNS]->(to)')
+      expect(result.query).toContain('SET r += $props')
+      expect(result.params.props).toEqual({ since: '2020-01-01' })
+    })
+
+    it('should handle MERGE without properties', () => {
+      const sourceNode = {
+        entityType: 'Person',
+        person_id: 'P123',
+      }
+      const targetNode = {
+        entityType: 'BankAccount',
+        iban: 'DE89370400440532013000',
+      }
+
+      const result = generateRelationshipQuery('OWNS', sourceNode, targetNode, {
+        merge: true,
+      })
+
+      expect(result.query).toContain('MERGE (from)-[r:OWNS]->(to)')
+      expect(result.query).not.toContain('SET r')
+      expect(result.params).not.toHaveProperty('props')
     })
   })
 
