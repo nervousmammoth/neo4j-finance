@@ -67,6 +67,22 @@ describe('Node Cypher Query Generator', () => {
       expect(result.params.props).toHaveProperty('dataset_id', 'dataset_001')
       expect(result.params.props).toHaveProperty('person_id', 'P123')
     })
+
+    it('should override dataset_id from data with datasetId option', () => {
+      const data = {
+        person_id: 'P123',
+        first_name: 'John',
+        last_name: 'Doe',
+        dataset_id: 'user_provided_dataset',
+      }
+
+      const result = generateNodeQuery('Person', data, { datasetId: 'option_dataset' })
+
+      // The datasetId from options should override the one in data
+      expect(result.params.props).toHaveProperty('dataset_id', 'option_dataset')
+      expect(result.params.props).toHaveProperty('person_id', 'P123')
+      expect(result.params.props).toHaveProperty('first_name', 'John')
+    })
   })
 
   describe('BankAccount Entity', () => {
@@ -131,7 +147,7 @@ describe('Node Cypher Query Generator', () => {
       const result = generateNodeQuery('BankAccount', data)
 
       // Should preserve the original value type (no automatic conversion)
-      expect(result.params.props.current_balance).toBe('1500.50')
+      expect((result.params.props as Record<string, unknown>).current_balance).toBe('1500.50')
     })
   })
 
@@ -229,9 +245,10 @@ describe('Node Cypher Query Generator', () => {
       }
 
       const result = generateNodeQuery('Company', data)
+      const props = result.params.props as Record<string, unknown>
 
-      expect(result.params.props.is_shell_company).toBe(true)
-      expect(typeof result.params.props.is_shell_company).toBe('boolean')
+      expect(props.is_shell_company).toBe(true)
+      expect(typeof props.is_shell_company).toBe('boolean')
     })
 
     it('should handle date formatting', () => {
@@ -242,10 +259,11 @@ describe('Node Cypher Query Generator', () => {
       }
 
       const result = generateNodeQuery('Company', data)
+      const props = result.params.props as Record<string, unknown>
 
       // Dates should be preserved as strings for Neo4j Date type
-      expect(result.params.props.incorporation_date).toBe('2010-05-15')
-      expect(typeof result.params.props.incorporation_date).toBe('string')
+      expect(props.incorporation_date).toBe('2010-05-15')
+      expect(typeof props.incorporation_date).toBe('string')
     })
   })
 
@@ -293,7 +311,7 @@ describe('Node Cypher Query Generator', () => {
       const result = generateNodeQuery('Transaction', data)
 
       // Timestamps preserved as strings
-      expect(result.params.props.date).toBe('2024-01-15T10:30:00Z')
+      expect((result.params.props as Record<string, unknown>).date).toBe('2024-01-15T10:30:00Z')
     })
 
     it('should handle flagged transactions', () => {
@@ -305,9 +323,10 @@ describe('Node Cypher Query Generator', () => {
       }
 
       const result = generateNodeQuery('Transaction', data)
+      const props = result.params.props as Record<string, unknown>
 
-      expect(result.params.props.is_flagged).toBe(true)
-      expect(result.params.props.flag_reason).toBe('High value transaction')
+      expect(props.is_flagged).toBe(true)
+      expect(props.flag_reason).toBe('High value transaction')
     })
   })
 
@@ -347,7 +366,7 @@ describe('Node Cypher Query Generator', () => {
       // Query should use parameters, not string interpolation
       expect(result.query).not.toContain("P'; DROP ALL; //")
       expect(result.query).toContain('$props')
-      expect(result.params.props.person_id).toBe("P'; DROP ALL; //")
+      expect((result.params.props as Record<string, unknown>).person_id).toBe("P'; DROP ALL; //")
     })
 
     it('should handle property values with quotes safely', () => {
@@ -358,10 +377,11 @@ describe('Node Cypher Query Generator', () => {
       }
 
       const result = generateNodeQuery('Person', data)
+      const props = result.params.props as Record<string, unknown>
 
       // Parameterized queries handle special characters safely
-      expect(result.params.props.first_name).toBe("O'Brien")
-      expect(result.params.props.last_name).toBe('Smith-Jones')
+      expect(props.first_name).toBe("O'Brien")
+      expect(props.last_name).toBe('Smith-Jones')
     })
 
     it('should handle backslash characters safely', () => {
@@ -372,7 +392,7 @@ describe('Node Cypher Query Generator', () => {
 
       const result = generateNodeQuery('Person', data)
 
-      expect(result.params.props.first_name).toBe('Test\\User')
+      expect((result.params.props as Record<string, unknown>).first_name).toBe('Test\\User')
     })
   })
 
@@ -405,7 +425,7 @@ describe('Node Cypher Query Generator', () => {
 
       const result = generateNodeQuery('Person', data)
 
-      const keys = Object.keys(result.params.props)
+      const keys = Object.keys(result.params.props as Record<string, unknown>)
       expect(keys).toEqual(['z_field', 'a_field', 'm_field'])
     })
   })

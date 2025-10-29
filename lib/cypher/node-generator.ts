@@ -8,13 +8,11 @@ import { isValidNeo4jLabel } from './validators'
 export interface GenerateNodeQueryOptions {
   merge?: boolean
   datasetId?: string
-  useParameters?: true
 }
 
 export interface GenerateNodeQueryResult {
   query: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  params: Record<string, any>
+  params: Record<string, unknown>
 }
 
 /**
@@ -35,18 +33,11 @@ const UNIQUE_IDENTIFIERS: Record<string, string> = {
  * @returns A new object with undefined values removed
  */
 function filterUndefinedValues(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Record<string, any> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filtered: Record<string, any> = {}
-  for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
-      filtered[key] = value
-    }
-  }
-  return filtered
+  data: Record<string, unknown>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined)
+  )
 }
 
 /**
@@ -57,14 +48,12 @@ function filterUndefinedValues(
  * @returns Prepared properties ready for Cypher query
  */
 function prepareNodeProperties(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>,
+  data: Record<string, unknown>,
   datasetId?: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Record<string, any> {
+): Record<string, unknown> {
   const filteredData = filterUndefinedValues(data)
   return datasetId
-    ? { dataset_id: datasetId, ...filteredData }
+    ? { ...filteredData, dataset_id: datasetId }
     : filteredData
 }
 
@@ -77,8 +66,7 @@ function prepareNodeProperties(
  */
 function buildCreateQuery(
   entityType: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  props: Record<string, any>
+  props: Record<string, unknown>
 ): GenerateNodeQueryResult {
   return {
     query: `CREATE (n:${entityType}) SET n = $props RETURN n`,
@@ -96,8 +84,7 @@ function buildCreateQuery(
  */
 function buildMergeQuery(
   entityType: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  props: Record<string, any>
+  props: Record<string, unknown>
 ): GenerateNodeQueryResult {
   const uniqueIdField = UNIQUE_IDENTIFIERS[entityType]
 
@@ -136,8 +123,7 @@ function buildMergeQuery(
  */
 export function generateNodeQuery(
   entityType: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>,
+  data: Record<string, unknown>,
   options?: GenerateNodeQueryOptions
 ): GenerateNodeQueryResult {
   // Validate entity type to prevent Cypher injection
