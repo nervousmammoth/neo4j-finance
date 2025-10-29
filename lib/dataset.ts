@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid'
-import { getDriver } from './neo4j'
+import { executeReadTransaction } from './neo4j'
 
 /**
  * Regular expression pattern for validating dataset ID format
@@ -32,14 +32,12 @@ function slugify(text: string): string {
  * generateDatasetId() // => 'dataset-1234567890123-a1b2c3d4'
  */
 export function generateDatasetId(name?: string): string {
-  const slug = name && name.trim() ? slugify(name) : 'dataset'
+  const slugified = name && name.trim() ? slugify(name) : ''
+  const slug = slugified || 'dataset'
   const timestamp = Date.now() // 13-digit millisecond timestamp
   const uuid = uuidv4().replace(/-/g, '').substring(0, 8) // First 8 chars of UUID
 
-  // Handle empty slug after slugification
-  const finalSlug = slug || 'dataset'
-
-  return `${finalSlug}-${timestamp}-${uuid}`
+  return `${slug}-${timestamp}-${uuid}`
 }
 
 /**
@@ -70,27 +68,16 @@ export function validateDatasetId(id: string): boolean {
  * await datasetExists('transactions-1234567890123-abcd1234') // => true or false
  */
 export async function datasetExists(id: string): Promise<boolean> {
-  const driver = getDriver()
-  const session = driver.session({
-    database: process.env.NEO4J_DATABASE || 'neo4j',
+  return executeReadTransaction(async (tx) => {
+    const queryResult = await tx.run(
+      'MATCH (n {dataset_id: $datasetId}) RETURN count(n) > 0 AS exists',
+      { datasetId: id }
+    )
+
+    if (queryResult.records.length === 0) {
+      return false
+    }
+
+    return queryResult.records[0].get('exists')
   })
-
-  try {
-    const result = await session.executeRead(async (tx) => {
-      const queryResult = await tx.run(
-        'MATCH (n {dataset_id: $datasetId}) RETURN count(n) > 0 AS exists LIMIT 1',
-        { datasetId: id }
-      )
-
-      if (queryResult.records.length === 0) {
-        return false
-      }
-
-      return queryResult.records[0].get('exists')
-    })
-
-    return result
-  } finally {
-    await session.close()
-  }
 }

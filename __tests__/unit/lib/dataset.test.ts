@@ -39,7 +39,7 @@ describe('dataset utilities', () => {
   })
 
   afterEach(() => {
-    vi.clearAllMocks()
+    vi.restoreAllMocks()
   })
 
   describe('generateDatasetId', () => {
@@ -287,24 +287,26 @@ describe('dataset utilities', () => {
       const originalDb = process.env.NEO4J_DATABASE
       delete process.env.NEO4J_DATABASE
 
-      mockSession.executeRead.mockImplementation(async (callback) => {
-        const mockTx = {
-          run: vi.fn().mockResolvedValue({
-            records: [{ get: () => true }],
-          }),
+      try {
+        mockSession.executeRead.mockImplementation(async (callback) => {
+          const mockTx = {
+            run: vi.fn().mockResolvedValue({
+              records: [{ get: () => true }],
+            }),
+          }
+          return callback(mockTx)
+        })
+
+        await datasetExists('test-1234567890123-abcd1234')
+
+        expect(mockDriver.session).toHaveBeenCalledWith({
+          database: 'neo4j',
+        })
+      } finally {
+        // Restore original value
+        if (originalDb !== undefined) {
+          process.env.NEO4J_DATABASE = originalDb
         }
-        return callback(mockTx)
-      })
-
-      await datasetExists('test-1234567890123-abcd1234')
-
-      expect(mockDriver.session).toHaveBeenCalledWith({
-        database: 'neo4j',
-      })
-
-      // Restore original value
-      if (originalDb) {
-        process.env.NEO4J_DATABASE = originalDb
       }
     })
   })
