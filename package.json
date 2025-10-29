@@ -27,6 +27,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.1",
+    "uuid": "^13.0.0",
     "xlsx": "^0.18.5",
     "zod": "^4.1.12"
   },
@@ -42,6 +43,7 @@
     "@types/papaparse": "^5.3.16",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.2",
+    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^2.1.8",
     "dotenv": "^17.2.3",
