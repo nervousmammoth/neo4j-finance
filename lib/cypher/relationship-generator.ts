@@ -3,7 +3,11 @@
  * Generates CREATE and MERGE Cypher queries for relationships with proper parameterization
  */
 
-import { isValidNeo4jLabel } from './validators'
+import {
+  filterUndefinedValues,
+  getUniqueIdentifierField,
+  validateNeo4jIdentifier,
+} from './utils'
 
 export interface NodeIdentifier {
   entityType: string
@@ -19,50 +23,6 @@ export interface GenerateRelationshipQueryOptions {
 export interface GenerateRelationshipQueryResult {
   query: string
   params: Record<string, unknown>
-}
-
-/**
- * Mapping of entity types to their unique identifier field names
- */
-const UNIQUE_IDENTIFIERS: Record<string, string> = {
-  Person: 'person_id',
-  BankAccount: 'iban',
-  Bank: 'bank_id',
-  Company: 'company_id',
-  Transaction: 'transaction_id',
-}
-
-/**
- * Filters out undefined values from data object while preserving null values
- *
- * @param data - The input data object
- * @returns A new object with undefined values removed
- */
-function filterUndefinedValues(
-  data: Record<string, unknown>
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(data).filter(([, value]) => value !== undefined)
-  )
-}
-
-/**
- * Gets the unique identifier field name for an entity type
- *
- * @param entityType - The entity type label
- * @returns The unique identifier field name
- * @throws {Error} If entity type is unknown
- */
-function getUniqueIdentifierField(entityType: string): string {
-  const uniqueIdField = UNIQUE_IDENTIFIERS[entityType]
-
-  if (!uniqueIdField) {
-    throw new Error(
-      `Unknown entity type: "${entityType}". Cannot determine unique identifier.`
-    )
-  }
-
-  return uniqueIdField
 }
 
 /**
@@ -99,20 +59,17 @@ function prepareRelationshipProperties(
   properties: Record<string, unknown> | undefined,
   datasetId?: string
 ): Record<string, unknown> | undefined {
-  if (!properties || Object.keys(properties).length === 0) {
-    return datasetId ? { dataset_id: datasetId } : undefined
-  }
-
-  const filteredProps = filterUndefinedValues(properties)
+  // Filter undefined values from properties if provided
+  const filteredProps = properties ? filterUndefinedValues(properties) : {}
   const hasProps = Object.keys(filteredProps).length > 0
 
+  // Return undefined if no properties and no dataset ID
   if (!hasProps && !datasetId) {
     return undefined
   }
 
-  return datasetId
-    ? { ...filteredProps, dataset_id: datasetId }
-    : filteredProps
+  // Return properties with optional dataset_id
+  return datasetId ? { ...filteredProps, dataset_id: datasetId } : filteredProps
 }
 
 /**
@@ -219,25 +176,11 @@ export function generateRelationshipQuery(
   options?: GenerateRelationshipQueryOptions
 ): GenerateRelationshipQueryResult {
   // Validate relationship type to prevent Cypher injection
-  if (!relationshipType || !isValidNeo4jLabel(relationshipType)) {
-    throw new Error(
-      `Invalid Neo4j relationship type: "${relationshipType}". Relationship types must start with a letter or underscore and contain only alphanumeric characters and underscores.`
-    )
-  }
+  validateNeo4jIdentifier(relationshipType, 'relationship type')
 
-  // Validate source node label
-  if (!sourceNode.entityType || !isValidNeo4jLabel(sourceNode.entityType)) {
-    throw new Error(
-      `Invalid Neo4j label: "${sourceNode.entityType}". Labels must start with a letter or underscore and contain only alphanumeric characters and underscores.`
-    )
-  }
-
-  // Validate target node label
-  if (!targetNode.entityType || !isValidNeo4jLabel(targetNode.entityType)) {
-    throw new Error(
-      `Invalid Neo4j label: "${targetNode.entityType}". Labels must start with a letter or underscore and contain only alphanumeric characters and underscores.`
-    )
-  }
+  // Validate source and target node labels
+  validateNeo4jIdentifier(sourceNode.entityType, 'label')
+  validateNeo4jIdentifier(targetNode.entityType, 'label')
 
   const { merge = false, datasetId, properties } = options || {}
 
