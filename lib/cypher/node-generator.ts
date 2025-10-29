@@ -29,6 +29,102 @@ const UNIQUE_IDENTIFIERS: Record<string, string> = {
 }
 
 /**
+ * Filters out undefined values from data object while preserving null values
+ *
+ * @param data - The input data object
+ * @returns A new object with undefined values removed
+ */
+function filterUndefinedValues(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filtered: Record<string, any> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      filtered[key] = value
+    }
+  }
+  return filtered
+}
+
+/**
+ * Prepares node properties by filtering undefined values and optionally adding dataset ID
+ *
+ * @param data - The raw property data
+ * @param datasetId - Optional dataset identifier for namespacing
+ * @returns Prepared properties ready for Cypher query
+ */
+function prepareNodeProperties(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>,
+  datasetId?: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Record<string, any> {
+  const filteredData = filterUndefinedValues(data)
+  return datasetId
+    ? { dataset_id: datasetId, ...filteredData }
+    : filteredData
+}
+
+/**
+ * Builds a CREATE query for a new node
+ *
+ * @param entityType - The validated Neo4j label
+ * @param props - The prepared node properties
+ * @returns Query and parameters for CREATE operation
+ */
+function buildCreateQuery(
+  entityType: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  props: Record<string, any>
+): GenerateNodeQueryResult {
+  return {
+    query: `CREATE (n:${entityType}) SET n = $props RETURN n`,
+    params: { props },
+  }
+}
+
+/**
+ * Builds a MERGE query for node upsert operation
+ *
+ * @param entityType - The validated Neo4j label
+ * @param props - The prepared node properties
+ * @returns Query and parameters for MERGE operation
+ * @throws {Error} If entity type is unknown or unique identifier is missing
+ */
+function buildMergeQuery(
+  entityType: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  props: Record<string, any>
+): GenerateNodeQueryResult {
+  const uniqueIdField = UNIQUE_IDENTIFIERS[entityType]
+
+  if (!uniqueIdField) {
+    throw new Error(
+      `Unknown entity type: "${entityType}". Cannot determine unique identifier for MERGE operation.`
+    )
+  }
+
+  if (!(uniqueIdField in props)) {
+    throw new Error(
+      `Missing required unique identifier "${uniqueIdField}" for MERGE operation on ${entityType}`
+    )
+  }
+
+  const uniqueIdValue = props[uniqueIdField]
+
+  return {
+    query: `MERGE (n:${entityType} {${uniqueIdField}: $${uniqueIdField}}) SET n += $props RETURN n`,
+    params: {
+      [uniqueIdField]: uniqueIdValue,
+      props,
+    },
+  }
+}
+
+/**
  * Generate a Cypher CREATE or MERGE query for a node
  *
  * @param entityType - The Neo4j label for the node (e.g., "Person", "BankAccount")
@@ -53,57 +149,9 @@ export function generateNodeQuery(
 
   const { merge = false, datasetId } = options || {}
 
-  // Filter out undefined values, but keep null values
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filteredData: Record<string, any> = {}
-  for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
-      filteredData[key] = value
-    }
-  }
+  // Prepare properties: filter undefined values and add dataset ID if provided
+  const props = prepareNodeProperties(data, datasetId)
 
-  // Add dataset namespace if provided
-  const props = datasetId
-    ? { dataset_id: datasetId, ...filteredData }
-    : filteredData
-
-  if (merge) {
-    // Get the unique identifier for this entity type
-    const uniqueIdField = UNIQUE_IDENTIFIERS[entityType]
-
-    if (!uniqueIdField) {
-      throw new Error(
-        `Unknown entity type: "${entityType}". Cannot determine unique identifier for MERGE operation.`
-      )
-    }
-
-    if (!(uniqueIdField in props)) {
-      throw new Error(
-        `Missing required unique identifier "${uniqueIdField}" for MERGE operation on ${entityType}`
-      )
-    }
-
-    const uniqueIdValue = props[uniqueIdField]
-
-    // MERGE query: match on unique identifier, then set all properties
-    const query = `MERGE (n:${entityType} {${uniqueIdField}: $${uniqueIdField}}) SET n += $props RETURN n`
-
-    return {
-      query,
-      params: {
-        [uniqueIdField]: uniqueIdValue,
-        props,
-      },
-    }
-  } else {
-    // CREATE query: create new node with all properties
-    const query = `CREATE (n:${entityType}) SET n = $props RETURN n`
-
-    return {
-      query,
-      params: {
-        props,
-      },
-    }
-  }
+  // Generate appropriate query based on operation type
+  return merge ? buildMergeQuery(entityType, props) : buildCreateQuery(entityType, props)
 }
