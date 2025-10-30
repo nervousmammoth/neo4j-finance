@@ -12,15 +12,17 @@ do
     fi
 
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-        # New branch, check all commits
-        range="$local_sha"
+        # New branch - check commits not in any remote branch
+        commits=$(git rev-list "$local_sha" --not --remotes)
+        if [ -n "$commits" ]; then
+            md_files=$(echo "$commits" | xargs git diff-tree --no-commit-id --name-only -r | grep '\.md$' || true)
+        else
+            md_files=""
+        fi
     else
         # Update to existing branch, check new commits
-        range="$remote_sha..$local_sha"
+        md_files=$(git diff --name-only --diff-filter=ACMR "$remote_sha..$local_sha" | grep '\.md$' || true)
     fi
-
-    # Check if any markdown files are in the commits being pushed
-    md_files=$(git diff --name-only --diff-filter=ACM "$range" | grep '\.md$')
 
     if [ -n "$md_files" ]; then
         echo ""

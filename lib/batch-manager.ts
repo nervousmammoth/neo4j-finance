@@ -37,28 +37,15 @@ export interface BatchProgress {
 
 /**
  * Result of batch execution
+ *
+ * Note: This function uses fail-fast error handling. If any batch fails
+ * after exhausting retries, the function throws an error immediately.
  */
 export interface BatchResult {
   /** Number of successfully processed items */
   succeeded: number
-  /** Number of failed items */
-  failed: number
   /** Total number of batches processed */
   totalBatches: number
-  /** Array of errors encountered */
-  errors: BatchError[]
-}
-
-/**
- * Error information for a failed batch
- */
-export interface BatchError {
-  /** Index of the failed batch */
-  batchIndex: number
-  /** Items that failed */
-  items: BatchItem[]
-  /** The error that occurred */
-  error: Error
 }
 
 /**
@@ -81,22 +68,28 @@ function chunkArray<T>(array: T[], size: number): T[][] {
 
 /**
  * Execute a single batch within a transaction
+ *
+ * Queries are executed in parallel for better performance, while still
+ * maintaining transaction atomicity (all succeed or all rollback).
  */
 async function executeSingleBatch(
   batch: BatchItem[],
   tx: ManagedTransaction
 ): Promise<void> {
-  for (const item of batch) {
-    await tx.run(item.query, item.params)
-  }
+  await Promise.all(batch.map((item) => tx.run(item.query, item.params)))
 }
 
 /**
  * Execute a batch of Neo4j queries with transaction management
  *
+ * Uses fail-fast error handling: if any batch fails after exhausting retries,
+ * the function throws immediately. Successfully processed batches are committed
+ * before the error is thrown.
+ *
  * @param items - Array of query/params objects to execute
  * @param options - Optional configuration for batch processing
  * @returns Promise resolving to batch execution results
+ * @throws Error if any batch fails after exhausting retries
  *
  * @example
  * ```typescript
@@ -119,13 +112,20 @@ export async function executeBatch(
   const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES
   const onProgress = options?.onProgress
 
+  // Validate input parameters
+  if (!Number.isInteger(batchSize) || batchSize <= 0) {
+    throw new Error('batchSize must be a positive integer')
+  }
+
+  if (!Number.isInteger(maxRetries) || maxRetries < 0) {
+    throw new Error('maxRetries must be a non-negative integer')
+  }
+
   // Handle empty input
   if (items.length === 0) {
     return {
       succeeded: 0,
-      failed: 0,
       totalBatches: 0,
-      errors: [],
     }
   }
 
@@ -181,8 +181,6 @@ export async function executeBatch(
   // Return success result
   return {
     succeeded: processedItems,
-    failed: 0,
     totalBatches: batches.length,
-    errors: [],
   }
 }

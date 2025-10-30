@@ -41,9 +41,7 @@ describe('Batch Manager', () => {
       const result = await executeBatch(items)
 
       expect(result.succeeded).toBe(200)
-      expect(result.failed).toBe(0)
       expect(result.totalBatches).toBe(1)
-      expect(result.errors).toHaveLength(0)
       expect(mockExecuteWriteTransaction).toHaveBeenCalledTimes(1)
     })
 
@@ -66,9 +64,7 @@ describe('Batch Manager', () => {
       const result = await executeBatch(items)
 
       expect(result.succeeded).toBe(500)
-      expect(result.failed).toBe(0)
       expect(result.totalBatches).toBe(3)
-      expect(result.errors).toHaveLength(0)
       expect(mockExecuteWriteTransaction).toHaveBeenCalledTimes(3)
     })
 
@@ -78,9 +74,7 @@ describe('Batch Manager', () => {
       const result = await executeBatch(items)
 
       expect(result.succeeded).toBe(0)
-      expect(result.failed).toBe(0)
       expect(result.totalBatches).toBe(0)
-      expect(result.errors).toHaveLength(0)
       expect(mockExecuteWriteTransaction).not.toHaveBeenCalled()
     })
 
@@ -104,7 +98,6 @@ describe('Batch Manager', () => {
       const result = await executeBatch(items)
 
       expect(result.succeeded).toBe(1)
-      expect(result.failed).toBe(0)
       expect(result.totalBatches).toBe(1)
       expect(mockExecuteWriteTransaction).toHaveBeenCalledTimes(1)
     })
@@ -241,7 +234,6 @@ describe('Batch Manager', () => {
       const result = await executeBatch(items, { maxRetries: 3 })
 
       expect(result.succeeded).toBe(10)
-      expect(result.failed).toBe(0)
       // Called twice: 1 failure + 1 retry success
       expect(mockExecuteWriteTransaction).toHaveBeenCalledTimes(2)
     })
@@ -453,6 +445,149 @@ describe('Batch Manager', () => {
 
       expect(result.succeeded).toBe(3)
       expect(result.totalBatches).toBe(1)
+    })
+  })
+
+  describe('executeBatch - input validation', () => {
+    it('should reject zero batchSize', async () => {
+      const items: BatchItem[] = [
+        { query: 'CREATE (n:Test {id: $id})', params: { id: 1 } },
+      ]
+
+      await expect(executeBatch(items, { batchSize: 0 })).rejects.toThrow(
+        'batchSize must be a positive integer'
+      )
+    })
+
+    it('should reject negative batchSize', async () => {
+      const items: BatchItem[] = [
+        { query: 'CREATE (n:Test {id: $id})', params: { id: 1 } },
+      ]
+
+      await expect(executeBatch(items, { batchSize: -10 })).rejects.toThrow(
+        'batchSize must be a positive integer'
+      )
+    })
+
+    it('should reject non-integer batchSize', async () => {
+      const items: BatchItem[] = [
+        { query: 'CREATE (n:Test {id: $id})', params: { id: 1 } },
+      ]
+
+      await expect(executeBatch(items, { batchSize: 10.5 })).rejects.toThrow(
+        'batchSize must be a positive integer'
+      )
+    })
+
+    it('should reject negative maxRetries', async () => {
+      const items: BatchItem[] = [
+        { query: 'CREATE (n:Test {id: $id})', params: { id: 1 } },
+      ]
+
+      await expect(executeBatch(items, { maxRetries: -1 })).rejects.toThrow(
+        'maxRetries must be a non-negative integer'
+      )
+    })
+
+    it('should reject non-integer maxRetries', async () => {
+      const items: BatchItem[] = [
+        { query: 'CREATE (n:Test {id: $id})', params: { id: 1 } },
+      ]
+
+      await expect(executeBatch(items, { maxRetries: 3.7 })).rejects.toThrow(
+        'maxRetries must be a non-negative integer'
+      )
+    })
+
+    it('should accept zero maxRetries (no retries)', async () => {
+      const items: BatchItem[] = [
+        { query: 'CREATE (n:Test {id: $id})', params: { id: 1 } },
+      ]
+
+      mockExecuteWriteTransaction.mockImplementation(async (fn) => {
+        const mockTx = {
+          run: vi.fn().mockResolvedValue({ records: [] }),
+        }
+        return await fn(mockTx)
+      })
+
+      const result = await executeBatch(items, { maxRetries: 0 })
+      expect(result.succeeded).toBe(1)
+    })
+  })
+
+  describe('executeBatch - parallel execution', () => {
+    it('should execute all queries in batch concurrently', async () => {
+      const items: BatchItem[] = Array.from({ length: 5 }, (_, i) => ({
+        query: `CREATE (n:Test {id: $id})`,
+        params: { id: i },
+      }))
+
+      const mockRun = vi.fn().mockResolvedValue({ records: [] })
+
+      mockExecuteWriteTransaction.mockImplementation(async (fn) => {
+        const mockTx = { run: mockRun }
+        return await fn(mockTx)
+      })
+
+      await executeBatch(items)
+
+      // All 5 queries should have been called
+      expect(mockRun).toHaveBeenCalledTimes(5)
+
+      // Verify each query was called with correct parameters
+      for (let i = 0; i < 5; i++) {
+        expect(mockRun).toHaveBeenCalledWith(
+          'CREATE (n:Test {id: $id})',
+          { id: i }
+        )
+      }
+    })
+
+    it('should rollback entire batch if any query fails during parallel execution', async () => {
+      const items: BatchItem[] = Array.from({ length: 5 }, (_, i) => ({
+        query: `CREATE (n:Test {id: $id})`,
+        params: { id: i },
+      }))
+
+      mockExecuteWriteTransaction.mockImplementation(async (fn) => {
+        const mockTx = {
+          run: vi
+            .fn()
+            .mockResolvedValueOnce({ records: [] })
+            .mockResolvedValueOnce({ records: [] })
+            .mockRejectedValueOnce(new Error('Query 3 failed'))
+            .mockResolvedValueOnce({ records: [] })
+            .mockResolvedValueOnce({ records: [] }),
+        }
+        return await fn(mockTx)
+      })
+
+      await expect(executeBatch(items)).rejects.toThrow('Query 3 failed')
+    })
+
+    it('should maintain transaction atomicity with parallel execution', async () => {
+      const items: BatchItem[] = [
+        { query: 'CREATE (p:Person {id: $id})', params: { id: 1 } },
+        { query: 'CREATE (a:Account {id: $id})', params: { id: 2 } },
+        {
+          query: 'MATCH (p:Person {id: $pid}), (a:Account {id: $aid}) CREATE (p)-[:OWNS]->(a)',
+          params: { pid: 1, aid: 2 },
+        },
+      ]
+
+      const mockRun = vi.fn().mockResolvedValue({ records: [] })
+
+      mockExecuteWriteTransaction.mockImplementation(async (fn) => {
+        const mockTx = { run: mockRun }
+        return await fn(mockTx)
+      })
+
+      const result = await executeBatch(items)
+
+      // All queries should succeed together
+      expect(result.succeeded).toBe(3)
+      expect(mockRun).toHaveBeenCalledTimes(3)
     })
   })
 })
