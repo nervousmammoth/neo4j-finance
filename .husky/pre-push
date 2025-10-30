@@ -1,0 +1,44 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+echo "🔒 Checking for markdown files in commits..."
+
+# Read stdin to get the range of commits being pushed
+while read local_ref local_sha remote_ref remote_sha
+do
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        # This is a branch deletion, allow it
+        continue
+    fi
+
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        # New branch - check commits not in any remote branch
+        commits=$(git rev-list "$local_sha" --not --remotes)
+        if [ -n "$commits" ]; then
+            md_files=$(echo "$commits" | xargs git diff-tree --no-commit-id --name-only -r | grep '\.md$' || true)
+        else
+            md_files=""
+        fi
+    else
+        # Update to existing branch, check new commits
+        md_files=$(git diff --name-only --diff-filter=ACMR "$remote_sha..$local_sha" | grep '\.md$' || true)
+    fi
+
+    if [ -n "$md_files" ]; then
+        echo ""
+        echo "❌ ERROR: Attempting to push markdown files to remote repository:"
+        echo "$md_files" | sed 's/^/     /'
+        echo ""
+        echo "📝 Markdown files should remain local only."
+        echo ""
+        echo "To fix this:"
+        echo "  1. Remove markdown files from your commits: git reset HEAD~1"
+        echo "  2. Unstage markdown files: git reset HEAD *.md"
+        echo "  3. Commit without markdown files"
+        echo "  4. Try pushing again"
+        echo ""
+        exit 1
+    fi
+done
+
+echo "✅ No markdown files detected in push"
